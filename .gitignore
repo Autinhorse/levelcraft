@@ -1,0 +1,34 @@
+# Godot 4+ specific ignores
+.godot/
+.import/
+
+# Imported translations (automatically generated from CSV files)
+*.translation
+
+# Mono-specific ignores
+.mono/
+data_*/
+mono_crash.*.json
+
+# System/tool files
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/
+
+# Export output
+/export/
+/build/
+
+# Prevent accidental root-level web exports (we export to /docs/)
+/index.html
+/index.js
+/index.wasm
+/index.pck
+/index.png
+/index.icon.png
+/index.apple-touch-icon.png
+/index.audio.worklet.js
+/index.audio.position.worklet.js
+/index.*.import

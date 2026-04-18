@@ -1,0 +1,32 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ground"]
+size = Vector2(640, 60)
+
+[node name="Main" type="Node2D"]
+
+[node name="Background" type="Polygon2D" parent="."]
+color = Color(0.5, 0.7, 1.0, 1)
+polygon = PackedVector2Array(0, 0, 640, 0, 640, 360, 0, 360)
+
+[node name="Ground" type="StaticBody2D" parent="."]
+position = Vector2(320, 330)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ground"]
+shape = SubResource("RectangleShape2D_ground")
+
+[node name="Visual" type="Polygon2D" parent="Ground"]
+color = Color(0.5, 0.3, 0.1, 1)
+polygon = PackedVector2Array(-320, -30, 320, -30, 320, 30, -320, 30)
+
+[node name="Player" parent="." instance=ExtResource("1_player")]
+position = Vector2(320, 200)
+
+[node name="Hint" type="Label" parent="."]
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 500.0
+offset_bottom = 40.0
+text = "Move: Arrow / A D    Jump: Space / W / Up"
