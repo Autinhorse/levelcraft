@@ -16,3 +16,12 @@ polygon = PackedVector2Array(0, 0, 368, 0, 368, 240, 0, 240)
 position = Vector2(40, 150)
 
 [node name="Music" type="AudioStreamPlayer" parent="."]
+
+[node name="Overlay" type="CanvasLayer" parent="."]
+layer = 100
+
+[node name="Black" type="ColorRect" parent="Overlay"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0)

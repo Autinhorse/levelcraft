@@ -11,3 +11,5 @@ script = ExtResource("1_player_script")
 
 [node name="Camera2D" type="Camera2D" parent="."]
 position = Vector2(0, -8)
+
+[node name="SFX" type="AudioStreamPlayer" parent="."]

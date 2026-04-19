@@ -6,16 +6,18 @@ const JUMP_VELOCITY := -270.0
 const GRAVITY := 490.0
 const FALL_DEATH_Y := 320.0
 const STOMP_BOUNCE := -200.0
-
-var dead: bool = false
+const DEATH_LAUNCH := -500.0
+const DEATH_EXIT_Y := 420.0
 
 @export_file("*.json") var character_json_path: String = "res://characters/mario.json"
 
 @onready var sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var collision: CollisionShape2D = $CollisionShape2D
+@onready var sfx: AudioStreamPlayer = $SFX
 
 var char_data: CharacterLoader.CharacterData
 var current_form: String = ""
+var dead: bool = false
 
 func _ready() -> void:
 	char_data = CharacterLoader.load_from_json(character_json_path)
@@ -50,11 +52,16 @@ func set_form(form_name: String) -> void:
 	current_form = form_name
 
 func _physics_process(delta: float) -> void:
+	if dead:
+		_process_death(delta)
+		return
+
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
 
 	if Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity.y = JUMP_VELOCITY
+		_play_sfx("jumpsmall.wav" if current_form == "small" else "jump.wav")
 
 	var direction := Input.get_axis("move_left", "move_right")
 	if direction != 0.0:
@@ -81,11 +88,39 @@ func _physics_process(delta: float) -> void:
 				die()
 				return
 
+func _process_death(delta: float) -> void:
+	velocity.y += GRAVITY * delta
+	position += velocity * delta
+	if position.y > DEATH_EXIT_Y:
+		set_physics_process(false)
+		var scene_root := get_tree().current_scene
+		if scene_root != null and scene_root.has_method("fade_out_and_reload"):
+			scene_root.fade_out_and_reload()
+		else:
+			get_tree().paused = false
+			get_tree().reload_current_scene()
+
 func die() -> void:
 	if dead:
 		return
 	dead = true
-	get_tree().reload_current_scene()
+	get_tree().paused = true
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	collision.set_deferred("disabled", true)
+	var scene_root := get_tree().current_scene
+	if scene_root != null and scene_root.has_method("stop_music"):
+		scene_root.stop_music()
+	_play_sfx("death.wav")
+	if sprite.sprite_frames != null and sprite.sprite_frames.has_animation("die"):
+		sprite.play("die")
+	velocity = Vector2(0, DEATH_LAUNCH)
+
+func _play_sfx(sound_name: String) -> void:
+	var path := "res://Sound/" + sound_name
+	if not ResourceLoader.exists(path):
+		return
+	sfx.stream = load(path) as AudioStream
+	sfx.play()
 
 func _update_animation() -> void:
 	if sprite.sprite_frames == null:

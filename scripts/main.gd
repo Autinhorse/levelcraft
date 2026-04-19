@@ -7,6 +7,7 @@ const TILE_SIZE := 16
 @onready var player: CharacterBody2D = $Player
 @onready var background: Polygon2D = $Background
 @onready var music: AudioStreamPlayer = $Music
+@onready var fade_rect: ColorRect = $Overlay/Black
 
 func _ready() -> void:
 	var path: String = GameState.selected_level_json
@@ -53,6 +54,17 @@ func _play_music(music_name: String) -> void:
 		return
 	music.stream = stream
 	music.play()
+
+func stop_music() -> void:
+	music.stop()
+
+func fade_out_and_reload() -> void:
+	var tween := create_tween()
+	tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tween.tween_property(fade_rect, "color:a", 1.0, 0.3)
+	await tween.finished
+	get_tree().paused = false
+	get_tree().reload_current_scene()
 
 func _apply_camera_limits(grid_size: Vector2i) -> void:
 	var cam := player.get_node_or_null("Camera2D") as Camera2D
