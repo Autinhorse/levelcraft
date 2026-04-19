@@ -1,13 +1,17 @@
 [remap]
 
-importer="keep"
-type=""
-uid="uid://r41i6ulaaid"
+importer="csv_translation"
+type="Translation"
+uid="uid://nn65856ywu8l"
+valid=false
 
 [deps]
 
 source_file="res://levels/SMB1_World01_01_02.csv"
-dest_files=[]
 
 [params]
 
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

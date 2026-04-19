@@ -105,7 +105,7 @@ func enter_pipe(csv_name: String, spawn_pos: Vector2) -> void:
 	tween1.tween_property(fade_rect, "color:a", 1.0, 0.3)
 	await tween1.finished
 
-	var csv_path := current_level_dir + "/" + csv_name + ".csv"
+	var csv_path := current_level_dir + "/" + csv_name + ".txt"
 	_render_area(csv_path, current_map_style)
 	player.position = spawn_pos
 	player.velocity = Vector2.ZERO
