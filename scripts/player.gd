@@ -1,9 +1,13 @@
+class_name Player
 extends CharacterBody2D
 
 const SPEED := 100.0
 const JUMP_VELOCITY := -270.0
 const GRAVITY := 490.0
 const FALL_DEATH_Y := 320.0
+const STOMP_BOUNCE := -200.0
+
+var dead: bool = false
 
 @export_file("*.json") var character_json_path: String = "res://characters/mario.json"
 
@@ -63,7 +67,25 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 	if position.y > FALL_DEATH_Y:
-		get_tree().reload_current_scene()
+		die()
+		return
+
+	for i in get_slide_collision_count():
+		var col := get_slide_collision(i)
+		var other := col.get_collider()
+		if other is Goomba:
+			if col.get_normal().y < -0.7:
+				(other as Goomba).squish()
+				velocity.y = STOMP_BOUNCE
+			else:
+				die()
+				return
+
+func die() -> void:
+	if dead:
+		return
+	dead = true
+	get_tree().reload_current_scene()
 
 func _update_animation() -> void:
 	if sprite.sprite_frames == null:
