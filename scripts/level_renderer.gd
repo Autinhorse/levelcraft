@@ -37,9 +37,12 @@ static func _parse_csv(path: String) -> Array:
 	if file == null:
 		push_error("Cannot open CSV: %s (err=%s, exists=%s)" % [path, FileAccess.get_open_error(), ResourceLoader.exists(path)])
 		return []
+	var length := file.get_length()
+	print("[lr] csv file opened, length=", length)
+	var text := file.get_as_text()
+	print("[lr] csv text length=", text.length(), " first100=", text.substr(0, 100))
 	var grid: Array = []
-	while not file.eof_reached():
-		var line := file.get_line()
+	for line in text.split("\n"):
 		if line.strip_edges().is_empty():
 			continue
 		var cells: Array = []
