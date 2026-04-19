@@ -14,12 +14,3 @@ polygon = PackedVector2Array(0, 0, 368, 0, 368, 240, 0, 240)
 
 [node name="Player" parent="." instance=ExtResource("2_player")]
 position = Vector2(40, 150)
-
-[node name="HUD" type="CanvasLayer" parent="."]
-
-[node name="Hint" type="Label" parent="HUD"]
-offset_left = 5.0
-offset_top = 5.0
-offset_right = 360.0
-offset_bottom = 20.0
-text = "Move: Arrow / A D    Jump: Space / W / Up"

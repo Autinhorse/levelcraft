@@ -12,10 +12,8 @@ const FALL_DEATH_Y := 320.0
 
 var char_data: CharacterLoader.CharacterData
 var current_form: String = ""
-var spawn_position: Vector2
 
 func _ready() -> void:
-	spawn_position = position
 	char_data = CharacterLoader.load_from_json(character_json_path)
 	if char_data != null:
 		set_form(char_data.default_form)
@@ -65,8 +63,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 	if position.y > FALL_DEATH_Y:
-		position = spawn_position
-		velocity = Vector2.ZERO
+		get_tree().reload_current_scene()
 
 func _update_animation() -> void:
 	if sprite.sprite_frames == null:
