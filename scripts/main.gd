@@ -13,10 +13,17 @@ const TILE_SIZE := 16
 var current_level_dir: String = ""
 var current_map_style: int = 0
 
+func _init() -> void:
+	print("[main] _init (script loaded)")
+
+func _enter_tree() -> void:
+	print("[main] _enter_tree")
+
 func _process(_delta: float) -> void:
 	coin_label.text = "COINS: %d" % GameState.coin_count
 
 func _ready() -> void:
+	print("[main] _ready BEGIN")
 	var path: String = GameState.selected_level_json
 	if path.is_empty():
 		path = DEFAULT_LEVEL
