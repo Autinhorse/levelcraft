@@ -6,7 +6,8 @@ const JUMP_VELOCITY := -270.0
 const GRAVITY := 490.0
 const FALL_DEATH_Y := 320.0
 const STOMP_BOUNCE := -200.0
-const DEATH_LAUNCH := -500.0
+const DEATH_LAUNCH_NORMAL := -250.0
+const DEATH_LAUNCH_FROM_PIT := -500.0
 const DEATH_EXIT_Y := 420.0
 
 @export_file("*.json") var character_json_path: String = "res://characters/mario.json"
@@ -113,7 +114,8 @@ func die() -> void:
 	_play_sfx("death.wav")
 	if sprite.sprite_frames != null and sprite.sprite_frames.has_animation("die"):
 		sprite.play("die")
-	velocity = Vector2(0, DEATH_LAUNCH)
+	var launch := DEATH_LAUNCH_FROM_PIT if position.y > 240.0 else DEATH_LAUNCH_NORMAL
+	velocity = Vector2(0, launch)
 
 func _play_sfx(sound_name: String) -> void:
 	var path := "res://Sound/" + sound_name
