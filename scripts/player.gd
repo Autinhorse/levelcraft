@@ -2,6 +2,7 @@ class_name Player
 extends CharacterBody2D
 
 const SPEED := 100.0
+const DECEL := 200.0
 const JUMP_VELOCITY := -270.0
 const GRAVITY := 490.0
 const FALL_DEATH_Y := 320.0
@@ -9,6 +10,8 @@ const STOMP_BOUNCE := -200.0
 const DEATH_LAUNCH_NORMAL := -250.0
 const DEATH_LAUNCH_FROM_PIT := -500.0
 const DEATH_EXIT_Y := 420.0
+const MAX_FIREBALLS := 2
+const FIREBALL_SCENE := preload("res://scenes/fireball.tscn")
 
 @export_file("*.json") var character_json_path: String = "res://characters/mario.json"
 
@@ -19,6 +22,11 @@ const DEATH_EXIT_Y := 420.0
 var char_data: CharacterLoader.CharacterData
 var current_form: String = ""
 var dead: bool = false
+var transforming: bool = false
+var invincible: bool = false
+var active_fireballs: Array = []
+var run_duration: float = 0.0
+var inertia_active: bool = false
 
 func _ready() -> void:
 	char_data = CharacterLoader.load_from_json(character_json_path)
@@ -56,6 +64,8 @@ func _physics_process(delta: float) -> void:
 	if dead:
 		_process_death(delta)
 		return
+	if transforming:
+		return
 
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
@@ -64,12 +74,25 @@ func _physics_process(delta: float) -> void:
 		velocity.y = JUMP_VELOCITY
 		_play_sfx("jumpsmall.wav" if current_form == "small" else "jump.wav")
 
+	if Input.is_action_just_pressed("fire") and current_form == "fire":
+		_shoot_fireball()
+
 	var direction := Input.get_axis("move_left", "move_right")
 	if direction != 0.0:
 		velocity.x = direction * SPEED
 		sprite.flip_h = direction < 0.0
+		run_duration += delta
+		inertia_active = false
 	else:
-		velocity.x = move_toward(velocity.x, 0.0, SPEED)
+		if run_duration >= 1.0:
+			inertia_active = true
+		run_duration = 0.0
+		if inertia_active:
+			velocity.x = move_toward(velocity.x, 0.0, DECEL * delta)
+			if is_zero_approx(velocity.x):
+				inertia_active = false
+		else:
+			velocity.x = 0.0
 
 	_update_animation()
 	move_and_slide()
@@ -85,9 +108,16 @@ func _physics_process(delta: float) -> void:
 			if col.get_normal().y < -0.7:
 				(other as Goomba).squish()
 				velocity.y = STOMP_BOUNCE
+				_play_sfx("bump.wav")
 			else:
-				die()
+				take_damage()
 				return
+		elif other is QuestionBlock:
+			if col.get_normal().y > 0.7:
+				(other as QuestionBlock).hit(self)
+		elif other is BrickBlock:
+			if col.get_normal().y > 0.7:
+				(other as BrickBlock).hit(self)
 
 func _process_death(delta: float) -> void:
 	velocity.y += GRAVITY * delta
@@ -116,6 +146,81 @@ func die() -> void:
 		sprite.play("die")
 	var launch := DEATH_LAUNCH_FROM_PIT if position.y > 240.0 else DEATH_LAUNCH_NORMAL
 	velocity = Vector2(0, launch)
+
+func power_up(target_form: String) -> void:
+	if dead or transforming or invincible:
+		return
+	if not char_data.forms.has(target_form):
+		return
+	if current_form == target_form:
+		return
+	_play_sfx("powerup.wav")
+	await _morph(target_form)
+
+func take_damage() -> void:
+	if dead or transforming or invincible:
+		return
+	if current_form == "small":
+		die()
+		return
+	_play_sfx("pipepowerdown.wav")
+	await _morph("small")
+	_start_invincibility(1.5)
+
+func _morph(target_form: String) -> void:
+	if not char_data.forms.has(target_form) or current_form == target_form:
+		return
+	transforming = true
+	get_tree().paused = true
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
+	var old_form := current_form
+	var new_data: CharacterLoader.FormData = char_data.forms[target_form]
+	var old_data: CharacterLoader.FormData = char_data.forms[old_form]
+
+	# Size collision immediately to the target form (so player fits correctly after).
+	collision.shape = new_data.shape
+	collision.position = Vector2(0, -new_data.size.y / 2.0)
+
+	var flashes := 10  # 10 * 0.2s = 2s
+	for i in flashes:
+		var show_new := (i % 2) == 0
+		var data: CharacterLoader.FormData = new_data if show_new else old_data
+		sprite.sprite_frames = data.sprite_frames
+		sprite.offset = Vector2(0, -data.size.y / 2.0)
+		if sprite.sprite_frames.has_animation("idle"):
+			sprite.play("idle")
+		await get_tree().create_timer(0.2, true).timeout
+
+	current_form = target_form
+	sprite.sprite_frames = new_data.sprite_frames
+	sprite.offset = Vector2(0, -new_data.size.y / 2.0)
+	if sprite.sprite_frames.has_animation("idle"):
+		sprite.play("idle")
+	transforming = false
+	process_mode = Node.PROCESS_MODE_INHERIT
+	get_tree().paused = false
+
+func _start_invincibility(duration: float) -> void:
+	invincible = true
+	var loops := int(duration / 0.2)
+	var tween := create_tween().set_loops(loops)
+	tween.tween_property(sprite, "modulate:a", 0.3, 0.1)
+	tween.tween_property(sprite, "modulate:a", 1.0, 0.1)
+	await tween.finished
+	sprite.modulate.a = 1.0
+	invincible = false
+
+func _shoot_fireball() -> void:
+	active_fireballs = active_fireballs.filter(func(f): return is_instance_valid(f))
+	if active_fireballs.size() >= MAX_FIREBALLS:
+		return
+	var ball := FIREBALL_SCENE.instantiate()
+	var dir := -1.0 if sprite.flip_h else 1.0
+	get_parent().add_child(ball)
+	ball.setup(position + Vector2(dir * 8.0, -12.0), dir)
+	active_fireballs.append(ball)
+	_play_sfx("fire.wav")
 
 func _play_sfx(sound_name: String) -> void:
 	var path := "res://Sound/" + sound_name

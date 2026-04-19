@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://caualclq6fv0k"]
+
+[ext_resource type="Script" path="res://scripts/end_flag.gd" id="1_script"]
+
+[node name="EndFlag" type="Node2D"]
+script = ExtResource("1_script")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+
+[node name="Area2D" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D"]

@@ -7,7 +7,8 @@
       "collision": { "width": 16, "height": 16 },
       "animations": {
         "walk":     { "frames": 2, "fps": 5, "loop": true  },
-        "squished": { "frames": 1, "fps": 1, "loop": false }
+        "squished": { "frames": 1, "fps": 1, "loop": false },
+        "dead":     { "frames": 1, "fps": 1, "loop": false }
       }
     }
   }

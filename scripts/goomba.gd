@@ -4,6 +4,9 @@ extends CharacterBody2D
 const SPEED := 30.0
 const GRAVITY := 490.0
 const SQUISH_LINGER := 0.4
+const ACTIVATION_MARGIN := 48.0  # 3 tiles off right edge
+const KILL_LAUNCH_VY := -160.0  # peaks ~1 tile up (26px) at g=490
+const KILL_EXIT_Y := 400.0
 
 @export_file("*.json") var character_json_path: String = "res://characters/goomba.json"
 
@@ -12,6 +15,9 @@ const SQUISH_LINGER := 0.4
 
 var direction: float = -1.0
 var alive: bool = true
+var active: bool = false
+var killed: bool = false
+var kill_velocity: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
 	var char_data := CharacterLoader.load_from_json(character_json_path)
@@ -26,9 +32,25 @@ func _ready() -> void:
 	collision.position = Vector2(0, -form.size.y / 2.0)
 	if sprite.sprite_frames.has_animation("walk"):
 		sprite.play("walk")
+	_setup_activation_notifier()
+
+func _setup_activation_notifier() -> void:
+	var notifier := VisibleOnScreenNotifier2D.new()
+	notifier.rect = Rect2(-ACTIVATION_MARGIN - 8.0, -16.0, ACTIVATION_MARGIN + 16.0, 16.0)
+	notifier.screen_entered.connect(_on_screen_entered)
+	add_child(notifier)
+
+func _on_screen_entered() -> void:
+	active = true
 
 func _physics_process(delta: float) -> void:
-	if not alive:
+	if killed:
+		kill_velocity.y += GRAVITY * delta
+		position += kill_velocity * delta
+		if position.y > KILL_EXIT_Y:
+			queue_free()
+		return
+	if not alive or not active:
 		return
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
@@ -44,7 +66,7 @@ func _physics_process(delta: float) -> void:
 			if col.get_normal().y > 0.7:
 				squish()
 			else:
-				(other as Player).die()
+				(other as Player).take_damage()
 
 func squish() -> void:
 	if not alive:
@@ -57,3 +79,16 @@ func squish() -> void:
 	var tween := create_tween()
 	tween.tween_interval(SQUISH_LINGER)
 	tween.tween_callback(queue_free)
+
+func kill(horizontal_impulse: float = 0.0) -> void:
+	if not alive or killed:
+		return
+	alive = false
+	killed = true
+	velocity = Vector2.ZERO
+	collision.set_deferred("disabled", true)
+	kill_velocity = Vector2(horizontal_impulse, KILL_LAUNCH_VY)
+	if sprite.sprite_frames != null and sprite.sprite_frames.has_animation("dead"):
+		sprite.play("dead")
+	else:
+		sprite.flip_v = true

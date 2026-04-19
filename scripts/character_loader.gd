@@ -51,18 +51,28 @@ static func _build_form(char_name: String, form_name: String, form_json: Diction
 		var fps: float = float(cfg.get("fps", 1.0))
 		var loop: bool = bool(cfg.get("loop", false))
 
-		form.sprite_frames.add_animation(anim_name)
-		form.sprite_frames.set_animation_speed(anim_name, fps)
-		form.sprite_frames.set_animation_loop(anim_name, loop)
-
+		var textures: Array[Texture2D] = []
+		var any_real := false
 		for i in range(frame_count):
 			var tex_path := "%s/%s_%d.png" % [sprites_path, anim_name, i]
 			var tex: Texture2D = null
 			if ResourceLoader.exists(tex_path):
 				tex = load(tex_path) as Texture2D
-			if tex == null:
-				tex = _placeholder(char_name, form_name, i, form.size)
-			form.sprite_frames.add_frame(anim_name, tex)
+				if tex != null:
+					any_real = true
+			textures.append(tex)
+
+		if not any_real:
+			continue
+
+		form.sprite_frames.add_animation(anim_name)
+		form.sprite_frames.set_animation_speed(anim_name, fps)
+		form.sprite_frames.set_animation_loop(anim_name, loop)
+		for i in range(frame_count):
+			var t: Texture2D = textures[i]
+			if t == null:
+				t = _placeholder(char_name, form_name, i, form.size)
+			form.sprite_frames.add_frame(anim_name, t)
 	return form
 
 static func _placeholder(char_name: String, form_name: String, frame_idx: int, size: Vector2) -> ImageTexture:
