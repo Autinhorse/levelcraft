@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://db5xgwo4jxmfw"
-path="res://.godot/imported/Metal01.png-f4e2c75a58bec8ef39520121af3e3e3e.ctex"
+uid="uid://c6em610res0ur"
+path="res://.godot/imported/fixed.png-e08643da0d6fe03cb0bcd6a90888a5d2.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://sprites/tiles/overworld/Metal01.png"
-dest_files=["res://.godot/imported/Metal01.png-f4e2c75a58bec8ef39520121af3e3e3e.ctex"]
+source_file="res://sprites/tiles/underground/fixed.png"
+dest_files=["res://.godot/imported/fixed.png-e08643da0d6fe03cb0bcd6a90888a5d2.ctex"]
 
 [params]
 

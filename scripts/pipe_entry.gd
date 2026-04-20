@@ -2,7 +2,7 @@ class_name PipeEntry
 extends Area2D
 
 @export var direction: String = ""
-@export var destination_csv: String = ""
+@export var destination_area: int = 0
 @export var destination_pos: Vector2 = Vector2(40, 150)
 
 var player_inside: bool = false
@@ -47,4 +47,4 @@ func _process(_delta: float) -> void:
 	triggered = true
 	var scene_root := get_tree().current_scene
 	if scene_root != null and scene_root.has_method("enter_pipe"):
-		scene_root.enter_pipe(destination_csv, destination_pos)
+		scene_root.enter_pipe(destination_area, destination_pos)

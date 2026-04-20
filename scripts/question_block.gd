@@ -1,7 +1,7 @@
 class_name QuestionBlock
 extends StaticBody2D
 
-enum Contents { COIN, POWERUP }
+enum Contents { COIN, POWERUP, STAR }
 enum Style { QUESTION, BRICK, HIDDEN }
 
 const QUESTION_TEX := preload("res://sprites/tiles/overworld/question.png")
@@ -10,6 +10,7 @@ const FIXED_TEX := preload("res://sprites/tiles/overworld/fixed.png")
 const COIN_SCENE := preload("res://scenes/coin.tscn")
 const MUSHROOM_SCENE := preload("res://scenes/mushroom.tscn")
 const FIRE_FLOWER_SCENE := preload("res://scenes/fire_flower.tscn")
+const STAR_SCENE := preload("res://scenes/star.tscn")
 
 const BUMP_HEIGHT := 6.0
 const BUMP_TIME := 0.08
@@ -73,6 +74,9 @@ func hit(player: Player) -> void:
 		Contents.POWERUP:
 			_spawn_power_up(player)
 			_deplete()
+		Contents.STAR:
+			_spawn_star()
+			_deplete()
 
 func _bump() -> void:
 	_kill_enemies_above(self)
@@ -106,6 +110,13 @@ func _spawn_power_up(player: Player) -> void:
 	get_parent().add_child(item)
 	if item.has_method("emerge"):
 		item.emerge()
+
+func _spawn_star() -> void:
+	var star := STAR_SCENE.instantiate()
+	star.position = position
+	get_parent().add_child(star)
+	if star.has_method("emerge"):
+		star.emerge()
 
 func _deplete() -> void:
 	depleted = true

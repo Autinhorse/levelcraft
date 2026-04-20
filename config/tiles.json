@@ -41,5 +41,7 @@
   "40": { "name": "pipe_cross_tr",  "solid": true,  "breakable": false },
   "41": { "name": "pipe_cross_bl",  "solid": true,  "breakable": false },
   "42": { "name": "pipe_cross_br",  "solid": true,  "breakable": false },
-  "50": { "name": "coin",           "solid": false }
+  "50": { "name": "coin",           "solid": false },
+  "51": { "name": "middle_point",   "solid": false },
+  "60": { "name": "goomba",         "solid": false }
 }

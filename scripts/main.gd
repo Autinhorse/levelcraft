@@ -12,6 +12,7 @@ const TILE_SIZE := 16
 
 var current_level_dir: String = ""
 var current_map_style: int = 0
+var current_areas: Array = []
 
 func _init() -> void:
 	print("[main] _init (script loaded)")
@@ -43,28 +44,45 @@ func _load_level(json_path: String) -> void:
 		push_error("Invalid level JSON: %s" % json_path)
 		return
 	var data: Dictionary = parsed
-	var areas: Array = data.get("levelDef", [])
-	if areas.is_empty():
+	current_areas = data.get("levelDef", [])
+	if current_areas.is_empty():
 		print("No levelDef entries in %s" % json_path)
 		return
 
-	var first_area: Dictionary = areas[0]
-	var csv_name: String = first_area.get("csv", "")
-	var map_style: int = int(first_area.get("mapStyle", 0))
-	if csv_name.is_empty():
-		return
-
 	current_level_dir = json_path.get_base_dir()
-	var csv_path := current_level_dir + "/" + csv_name
-	print("[main] load csv: ", csv_path)
-	_render_area(csv_path, map_style)
+
+	var use_checkpoint := (GameState.checkpoint_json_path == json_path
+			and GameState.checkpoint_area_index >= 0
+			and GameState.checkpoint_area_index < current_areas.size())
+	var start_area := GameState.checkpoint_area_index if use_checkpoint else 0
+	_load_area(start_area)
+	if use_checkpoint:
+		player.position = GameState.checkpoint_position
+		player.velocity = Vector2.ZERO
+		var cam := player.get_node_or_null("Camera2D") as Camera2D
+		if cam != null:
+			cam.reset_smoothing()
+
 	_play_music(data.get("music", ""))
 
-func _render_area(csv_path: String, map_style: int) -> void:
+func _load_area(index: int) -> void:
+	if index < 0 or index >= current_areas.size():
+		push_error("area index out of range: %d (have %d)" % [index, current_areas.size()])
+		return
+	var area: Dictionary = current_areas[index]
+	var csv_name: String = area.get("csv", "")
+	var map_style: int = int(area.get("mapStyle", 0))
+	if csv_name.is_empty():
+		return
+	var csv_path := current_level_dir + "/" + csv_name
+	print("[main] load area index=", index, " csv=", csv_path, " style=", map_style)
+	_render_area(csv_path, map_style, index)
+
+func _render_area(csv_path: String, map_style: int, area_index: int = 0) -> void:
 	current_map_style = map_style
 	for child in level_root.get_children():
 		child.queue_free()
-	var grid_size: Vector2i = LevelRenderer.render_area(level_root, csv_path, map_style)
+	var grid_size: Vector2i = LevelRenderer.render_area(level_root, csv_path, map_style, area_index)
 	print("[main] render_area grid_size=", grid_size, " children=", level_root.get_child_count())
 	_apply_camera_limits(grid_size)
 	_resize_background(grid_size)
@@ -93,7 +111,7 @@ func fade_out_and_reload() -> void:
 	get_tree().paused = false
 	get_tree().reload_current_scene()
 
-func enter_pipe(csv_name: String, spawn_pos: Vector2) -> void:
+func enter_pipe(area_index: int, spawn_pos: Vector2) -> void:
 	get_tree().paused = true
 	var sfx := AudioStreamPlayer.new()
 	sfx.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -105,8 +123,7 @@ func enter_pipe(csv_name: String, spawn_pos: Vector2) -> void:
 	tween1.tween_property(fade_rect, "color:a", 1.0, 0.3)
 	await tween1.finished
 
-	var csv_path := current_level_dir + "/" + csv_name + ".txt"
-	_render_area(csv_path, current_map_style)
+	_load_area(area_index)
 	player.position = spawn_pos
 	player.velocity = Vector2.ZERO
 
@@ -177,6 +194,7 @@ func end_level() -> void:
 	tween.tween_interval(0.6)
 	tween.tween_property(fade_rect, "color:a", 1.0, 0.4)
 	await tween.finished
+	GameState.clear_session_state()
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/level_select.tscn")
 

@@ -1,0 +1,20 @@
+[gd_scene format=3 uid="uid://co5ptuy56g7mq"]
+
+[ext_resource type="Script" path="res://scripts/middle_point.gd" id="1_script"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
+size = Vector2(12, 16)
+
+[node name="MiddlePoint" type="Area2D"]
+collision_layer = 0
+collision_mask = 2
+script = ExtResource("1_script")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(0, -8)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, -8)
+shape = SubResource("RectangleShape2D_1")
+
+[node name="SFX" type="AudioStreamPlayer" parent="."]

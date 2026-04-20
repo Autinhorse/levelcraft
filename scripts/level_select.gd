@@ -38,5 +38,6 @@ func _make_world_block(world: int) -> VBoxContainer:
 func _on_level_selected(world: int, level: int) -> void:
 	var json_path := "res://levels/SMB1_World%02d_%02d.json" % [world, level]
 	print("Selected level definition: %s" % json_path)
+	GameState.clear_session_state()
 	GameState.selected_level_json = json_path
 	get_tree().change_scene_to_file("res://scenes/main.tscn")

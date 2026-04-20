@@ -1,7 +1,8 @@
 {
   "name": "World 1 - Level 1",
   "levelDef": [
-    { "csv": "SMB1_World01_01_01.txt", "mapStyle": 0 }
+    { "csv": "SMB1_World01_01_01.txt", "mapStyle": 0 },
+    { "csv": "SMB1_World01_01_02.txt", "mapStyle": 1 }
   ],
   "music": "Above Ground BGM.mp3"
 }

@@ -63,7 +63,9 @@ func _physics_process(delta: float) -> void:
 		var col := get_slide_collision(i)
 		var other := col.get_collider()
 		if other is Player:
-			if col.get_normal().y > 0.7:
+			if (other as Player).star_invincible:
+				kill(direction * 60.0)
+			elif col.get_normal().y > 0.7:
 				squish()
 			else:
 				(other as Player).take_damage()

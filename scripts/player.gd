@@ -24,9 +24,11 @@ var current_form: String = ""
 var dead: bool = false
 var transforming: bool = false
 var invincible: bool = false
+var star_invincible: bool = false
 var active_fireballs: Array = []
 var run_duration: float = 0.0
 var inertia_active: bool = false
+var _star_flash_tween: Tween = null
 
 func _ready() -> void:
 	char_data = CharacterLoader.load_from_json(character_json_path)
@@ -105,7 +107,10 @@ func _physics_process(delta: float) -> void:
 		var col := get_slide_collision(i)
 		var other := col.get_collider()
 		if other is Goomba:
-			if col.get_normal().y < -0.7:
+			if star_invincible:
+				(other as Goomba).kill(velocity.x * 0.3)
+				_play_sfx("kickkill.wav")
+			elif col.get_normal().y < -0.7:
 				(other as Goomba).squish()
 				velocity.y = STOMP_BOUNCE
 				_play_sfx("bump.wav")
@@ -158,7 +163,7 @@ func power_up(target_form: String) -> void:
 	await _morph(target_form)
 
 func take_damage() -> void:
-	if dead or transforming or invincible:
+	if dead or transforming or invincible or star_invincible:
 		return
 	if current_form == "small":
 		die()
@@ -166,6 +171,25 @@ func take_damage() -> void:
 	_play_sfx("pipepowerdown.wav")
 	await _morph("small")
 	_start_invincibility(1.5)
+
+func activate_star() -> void:
+	if dead:
+		return
+	star_invincible = true
+	_play_sfx("powerup.wav")
+	if _star_flash_tween != null and _star_flash_tween.is_valid():
+		_star_flash_tween.kill()
+	_star_flash_tween = create_tween().set_loops()
+	_star_flash_tween.tween_property(sprite, "modulate", Color(1.0, 1.0, 0.4), 0.06)
+	_star_flash_tween.tween_property(sprite, "modulate", Color(1.0, 0.4, 0.4), 0.06)
+	_star_flash_tween.tween_property(sprite, "modulate", Color(0.4, 1.0, 1.0), 0.06)
+	_star_flash_tween.tween_property(sprite, "modulate", Color.WHITE, 0.06)
+	await get_tree().create_timer(15.0).timeout
+	if _star_flash_tween != null and _star_flash_tween.is_valid():
+		_star_flash_tween.kill()
+	_star_flash_tween = null
+	sprite.modulate = Color.WHITE
+	star_invincible = false
 
 func _morph(target_form: String) -> void:
 	if not char_data.forms.has(target_form) or current_form == target_form:

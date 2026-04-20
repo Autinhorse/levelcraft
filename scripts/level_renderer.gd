@@ -8,10 +8,12 @@ static var _catalog: Dictionary = {}
 static var _visuals: Dictionary = {}
 static var _configs_loaded: bool = false
 static var _current_csv_path: String = ""
+static var _current_area_index: int = 0
 
-static func render_area(parent: Node, csv_path: String, map_style: int) -> Vector2i:
+static func render_area(parent: Node, csv_path: String, map_style: int, area_index: int = 0) -> Vector2i:
 	_ensure_configs()
 	_current_csv_path = csv_path
+	_current_area_index = area_index
 	print("[lr] render_area start csv=", csv_path, " catalog_size=", _catalog.size(), " visuals_size=", _visuals.size())
 	var grid := _parse_csv(csv_path)
 	print("[lr] grid rows=", grid.size(), " first_row_cols=", (grid[0].size() if grid.size() > 0 else 0))
@@ -46,38 +48,15 @@ static func _parse_csv(path: String) -> Array:
 		if line.strip_edges().is_empty():
 			continue
 		var cells: Array = []
-		for cell in _split_csv_line(line):
-			cells.append(cell.strip_edges())
+		for cell in line.split("\t"):
+			cells.append(_unquote(cell.strip_edges()))
 		grid.append(cells)
 	return grid
 
-static func _split_csv_line(line: String) -> PackedStringArray:
-	var result: PackedStringArray = []
-	var current := ""
-	var in_quotes := false
-	var i := 0
-	while i < line.length():
-		var c := line[i]
-		if in_quotes:
-			if c == '"':
-				if i + 1 < line.length() and line[i + 1] == '"':
-					current += '"'
-					i += 1
-				else:
-					in_quotes = false
-			else:
-				current += c
-		else:
-			if c == '"':
-				in_quotes = true
-			elif c == ',':
-				result.append(current)
-				current = ""
-			else:
-				current += c
-		i += 1
-	result.append(current)
-	return result
+static func _unquote(s: String) -> String:
+	if s.length() >= 2 and s.begins_with('"') and s.ends_with('"'):
+		return s.substr(1, s.length() - 2).replace('""', '"')
+	return s
 
 static func _spawn_cell(parent: Node, cell: String, px: Vector2, col: int, row: int, map_style: int) -> void:
 	if cell.is_empty() or cell == "0":
@@ -106,6 +85,24 @@ static func _spawn_tile(parent: Node, id_str: String, px: Vector2, col: int, row
 		coin.col = col
 		coin.row = row
 		parent.add_child(coin)
+		return
+
+	if str(meta.get("name", "")) == "goomba":
+		var goomba := GOOMBA_SCENE.instantiate()
+		goomba.position = px + Vector2(TILE_SIZE / 2.0, TILE_SIZE)
+		parent.add_child(goomba)
+		return
+
+	if str(meta.get("name", "")) == "middle_point":
+		if GameState.is_consumed(_current_csv_path, col, row):
+			return
+		var mp := MIDDLE_POINT_SCENE.instantiate()
+		mp.position = px + Vector2(TILE_SIZE / 2.0, TILE_SIZE)
+		mp.csv_path = _current_csv_path
+		mp.col = col
+		mp.row = row
+		mp.area_index = _current_area_index
+		parent.add_child(mp)
 		return
 
 	var root := Node2D.new()
@@ -150,9 +147,10 @@ static func _spawn_brick_block(parent: Node, id_str: String, px: Vector2, col: i
 	parent.add_child(block)
 
 static func _load_tile_texture(id_str: String, map_style: int, meta: Dictionary) -> Texture2D:
-	var style_key := str(map_style)
 	var visuals: Dictionary = _visuals.get(id_str, {})
-	var tex_path: String = visuals.get(style_key, "")
+	var tex_path: String = str(visuals.get(str(map_style), ""))
+	if tex_path == "" or not ResourceLoader.exists(tex_path):
+		tex_path = str(visuals.get("0", ""))
 	if tex_path != "" and ResourceLoader.exists(tex_path):
 		return load(tex_path) as Texture2D
 	return _placeholder_texture(meta)
@@ -185,28 +183,31 @@ const BRICK_BLOCK_SCENE := preload("res://scenes/brick_block.tscn")
 const END_FLAG_SCENE := preload("res://scenes/end_flag.tscn")
 const PIPE_ENTRY_SCENE := preload("res://scenes/pipe_entry.tscn")
 const MAP_COIN_SCENE := preload("res://scenes/map_coin.tscn")
+const MIDDLE_POINT_SCENE := preload("res://scenes/middle_point.tscn")
 
 static func _spawn_complex(parent: Node, spec: String, px: Vector2, col: int, row: int, map_style: int) -> void:
 	var entity: String = spec.substr(1)
-	if entity == "goomba":
-		var goomba := GOOMBA_SCENE.instantiate()
-		goomba.position = px + Vector2(TILE_SIZE / 2.0, TILE_SIZE)
-		parent.add_child(goomba)
-	elif entity.begins_with("q-"):
+	if entity.begins_with("q-"):
 		var n := int(entity.substr(2))
 		_spawn_question_block(parent, px, QuestionBlock.Contents.COIN, maxi(n, 1), col, row)
 	elif entity == "qm":
 		_spawn_question_block(parent, px, QuestionBlock.Contents.POWERUP, 1, col, row)
+	elif entity == "qs":
+		_spawn_question_block(parent, px, QuestionBlock.Contents.STAR, 1, col, row)
 	elif entity.begins_with("b-"):
 		var n := int(entity.substr(2))
 		_spawn_question_block(parent, px, QuestionBlock.Contents.COIN, maxi(n, 1), col, row, QuestionBlock.Style.BRICK)
 	elif entity == "bm":
 		_spawn_question_block(parent, px, QuestionBlock.Contents.POWERUP, 1, col, row, QuestionBlock.Style.BRICK)
+	elif entity == "bs":
+		_spawn_question_block(parent, px, QuestionBlock.Contents.STAR, 1, col, row, QuestionBlock.Style.BRICK)
 	elif entity.begins_with("h-"):
 		var n := int(entity.substr(2))
 		_spawn_question_block(parent, px, QuestionBlock.Contents.COIN, maxi(n, 1), col, row, QuestionBlock.Style.HIDDEN)
 	elif entity == "hm":
 		_spawn_question_block(parent, px, QuestionBlock.Contents.POWERUP, 1, col, row, QuestionBlock.Style.HIDDEN)
+	elif entity == "hs":
+		_spawn_question_block(parent, px, QuestionBlock.Contents.STAR, 1, col, row, QuestionBlock.Style.HIDDEN)
 	elif entity == "end":
 		var flag := END_FLAG_SCENE.instantiate()
 		flag.position = px + Vector2(TILE_SIZE / 2.0, TILE_SIZE / 2.0)
@@ -224,7 +225,7 @@ static func _spawn_pipe_entry(parent: Node, rest: String, px: Vector2, col: int,
 	var dir: String = parts[0]
 	var dest: String = parts[1]
 	var dest_parts := dest.split("@", true, 1)
-	var csv_name: String = dest_parts[0]
+	var area_index: int = int(dest_parts[0])
 	var spawn_pos := Vector2(40, 150)
 	if dest_parts.size() > 1:
 		var coords := dest_parts[1].split(",")
@@ -260,7 +261,7 @@ static func _spawn_pipe_entry(parent: Node, rest: String, px: Vector2, col: int,
 	# Detection Area2D positioned just outside the opening pair.
 	var entry := PIPE_ENTRY_SCENE.instantiate()
 	entry.direction = dir
-	entry.destination_csv = csv_name
+	entry.destination_area = area_index
 	entry.destination_pos = spawn_pos
 	var opening_center := (px + px2) * 0.5 + Vector2(TILE_SIZE / 2.0, TILE_SIZE / 2.0)
 	var offset := Vector2.ZERO
