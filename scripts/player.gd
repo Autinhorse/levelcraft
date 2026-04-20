@@ -148,6 +148,9 @@ func _physics_process(delta: float) -> void:
 			else:
 				take_damage()
 				return
+		elif other is Boss:
+			take_damage()
+			return
 		elif other is QuestionBlock:
 			if col.get_normal().y > 0.7:
 				(other as QuestionBlock).hit(self)

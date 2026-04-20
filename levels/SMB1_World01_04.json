@@ -1,5 +1,7 @@
 {
   "name": "World 1 - Level 4",
-  "levelDef": [],
+  "levelDef": [
+    { "csv": "SMB1_World01_04_01.txt", "mapStyle": 1 }
+  ],
   "music": ""
 }

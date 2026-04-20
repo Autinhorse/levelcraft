@@ -60,5 +60,8 @@
   "70": { "0": "res://sprites/platform/platform-left.png" },
   "71": { "0": "res://sprites/platform/platform-middle.png" },
   "72": { "0": "res://sprites/platform/platform-right.png" },
-  "73": { "0": "res://sprites/platform/platform-bottom.png" }
+  "73": { "0": "res://sprites/platform/platform-bottom.png" },
+  "74": { "0": "res://sprites/tiles/overworld/lava_top.png" },
+  "75": { "0": "res://sprites/tiles/overworld/lava_bottom.png" },
+  "76": { "0": "res://sprites/tiles/overworld/bridge.png" }
 }

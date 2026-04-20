@@ -11,12 +11,24 @@ static var _current_csv_path: String = ""
 static var _current_area_index: int = 0
 static var _current_map_style: int = 0
 static var _current_grid: Array = []
+static var _current_spawn: Vector2 = Vector2.ZERO
+static var _has_spawn: bool = false
+static var _bridge_map: Dictionary = {}
+
+static func get_spawn_position() -> Vector2:
+	return _current_spawn
+
+static func has_spawn_position() -> bool:
+	return _has_spawn
 
 static func render_area(parent: Node, csv_path: String, map_style: int, area_index: int = 0) -> Vector2i:
 	_ensure_configs()
 	_current_csv_path = csv_path
 	_current_area_index = area_index
 	_current_map_style = map_style
+	_has_spawn = false
+	_current_spawn = Vector2.ZERO
+	_bridge_map.clear()
 	print("[lr] render_area start csv=", csv_path, " catalog_size=", _catalog.size(), " visuals_size=", _visuals.size())
 	var grid := _parse_csv(csv_path)
 	_current_grid = grid
@@ -151,6 +163,15 @@ static func _spawn_tile(parent: Node, id_str: String, px: Vector2, col: int, row
 		parent.add_child(piranha)
 		return
 
+	if str(meta.get("name", "")) == "spawn":
+		_current_spawn = px + Vector2(TILE_SIZE / 2.0, TILE_SIZE)
+		_has_spawn = true
+		return
+
+	if str(meta.get("name", "")) == "lava_bottom":
+		_spawn_lava_kill(parent, id_str, px, map_style, meta)
+		return
+
 	if str(meta.get("name", "")) == "middle_point":
 		if GameState.is_consumed(_current_csv_path, col, row):
 			return
@@ -190,6 +211,30 @@ static func _spawn_tile(parent: Node, id_str: String, px: Vector2, col: int, row
 		body.add_child(shape_node)
 		root.add_child(body)
 
+	if tile_name == "bridge":
+		_bridge_map[Vector2i(col, row)] = root
+
+	parent.add_child(root)
+
+static func _spawn_lava_kill(parent: Node, id_str: String, px: Vector2, map_style: int, meta: Dictionary) -> void:
+	var root := Node2D.new()
+	root.position = px + Vector2(TILE_SIZE / 2.0, TILE_SIZE / 2.0)
+	var sprite := Sprite2D.new()
+	sprite.texture = _load_tile_texture(id_str, map_style, meta)
+	root.add_child(sprite)
+	var area := Area2D.new()
+	area.collision_layer = 0
+	area.collision_mask = 2
+	var shape_node := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(TILE_SIZE, TILE_SIZE)
+	shape_node.shape = rect
+	area.add_child(shape_node)
+	area.body_entered.connect(func(body: Node) -> void:
+		if body is Player:
+			(body as Player).die()
+	)
+	root.add_child(area)
 	parent.add_child(root)
 
 static func _spawn_brick_block(parent: Node, id_str: String, px: Vector2, col: int, row: int, map_style: int, meta: Dictionary) -> void:
@@ -251,6 +296,8 @@ const MIDDLE_POINT_SCENE := preload("res://scenes/middle_point.tscn")
 const PLATFORM_SCENE := preload("res://scenes/platform.tscn")
 const FLYTURTLE_SCENE := preload("res://scenes/flyturtle.tscn")
 const PATH_PLATFORM_SCENE := preload("res://scenes/path_platform.tscn")
+const FIREBAR_SCENE := preload("res://scenes/firebar.tscn")
+const BOSS_SCENE := preload("res://scenes/boss.tscn")
 
 static func _spawn_complex(parent: Node, spec: String, px: Vector2, col: int, row: int, map_style: int) -> void:
 	var entity: String = spec.substr(1)
@@ -285,8 +332,97 @@ static func _spawn_complex(parent: Node, spec: String, px: Vector2, col: int, ro
 		_spawn_moving_platform(parent, entity.substr(9), col, row)
 	elif entity.begins_with("flyturtle:"):
 		_spawn_flyturtle(parent, entity.substr(10), col, row)
+	elif entity.begins_with("firebar:"):
+		_spawn_firebar(parent, entity.substr(8), col, row)
+	elif entity.begins_with("bridgecut:"):
+		_spawn_bridgecut(parent, entity.substr(10), col, row)
+	elif entity.begins_with("boss:"):
+		_spawn_boss(parent, entity.substr(5), col, row)
 	else:
 		print("[LevelRenderer] unknown entity '%s' at (%d,%d) style=%d" % [spec, col, row, map_style])
+
+static func _spawn_bridgecut(parent: Node, rest: String, col: int, row: int) -> void:
+	var parts := rest.split(",", true, 1)
+	if parts.size() < 2:
+		push_warning("[bridgecut] bad spec: %s" % rest)
+		return
+	var dx := int(parts[0])
+	var dy := int(parts[1])
+	var target_col := col + dx
+	var target_row := row + dy
+	var root := Node2D.new()
+	root.position = Vector2(col * TILE_SIZE + TILE_SIZE / 2.0, row * TILE_SIZE + TILE_SIZE / 2.0)
+	var sprite_path := "res://sprites/tiles/overworld/bridgecut.png"
+	if ResourceLoader.exists(sprite_path):
+		var sprite := Sprite2D.new()
+		sprite.texture = load(sprite_path) as Texture2D
+		root.add_child(sprite)
+	var area := Area2D.new()
+	area.collision_layer = 0
+	area.collision_mask = 2
+	var shape_node := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(TILE_SIZE, TILE_SIZE)
+	shape_node.shape = rect
+	area.add_child(shape_node)
+	area.body_entered.connect(func(body: Node) -> void:
+		if body is Player:
+			_cut_bridge(target_col, target_row)
+			root.queue_free()
+	)
+	root.add_child(area)
+	parent.add_child(root)
+
+static func _cut_bridge(start_col: int, start_row: int) -> void:
+	var start_key := Vector2i(start_col, start_row)
+	if not _bridge_map.has(start_key):
+		return
+	var c := start_col
+	while _bridge_map.has(Vector2i(c, start_row)):
+		var key := Vector2i(c, start_row)
+		var node = _bridge_map[key]
+		if is_instance_valid(node):
+			node.queue_free()
+		_bridge_map.erase(key)
+		c -= 1
+	c = start_col + 1
+	while _bridge_map.has(Vector2i(c, start_row)):
+		var key := Vector2i(c, start_row)
+		var node = _bridge_map[key]
+		if is_instance_valid(node):
+			node.queue_free()
+		_bridge_map.erase(key)
+		c += 1
+
+static func _spawn_boss(parent: Node, rest: String, col: int, row: int) -> void:
+	var parts := rest.split(",", true, 1)
+	if parts.size() < 2:
+		push_warning("[boss] bad spec: %s" % rest)
+		return
+	var dx := int(parts[0])
+	var dy := int(parts[1])
+	var b := BOSS_SCENE.instantiate()
+	b.point_a = Vector2(col * TILE_SIZE + TILE_SIZE / 2.0, row * TILE_SIZE + TILE_SIZE)
+	b.point_b = Vector2((col + dx) * TILE_SIZE + TILE_SIZE / 2.0, (row + dy) * TILE_SIZE + TILE_SIZE)
+	parent.add_child(b)
+
+static func _spawn_firebar(parent: Node, rest: String, col: int, row: int) -> void:
+	var parts := rest.split(":")
+	if parts.size() < 3:
+		push_warning("[firebar] bad spec: %s" % rest)
+		return
+	var length := maxi(int(parts[0]), 1)
+	var dir_str := parts[1]
+	if dir_str != "cw" and dir_str != "ccw":
+		push_warning("[firebar] bad direction: %s" % dir_str)
+		return
+	var start_step := clampi(int(parts[2]), 0, 11)
+	var fb := FIREBAR_SCENE.instantiate()
+	fb.length = length
+	fb.clockwise = (dir_str == "cw")
+	fb.start_angle_step = start_step
+	fb.position = Vector2(col * TILE_SIZE + TILE_SIZE / 2.0, row * TILE_SIZE + TILE_SIZE / 2.0)
+	parent.add_child(fb)
 
 static func _spawn_flyturtle(parent: Node, rest: String, col: int, row: int) -> void:
 	var parts := rest.split(",", true, 1)

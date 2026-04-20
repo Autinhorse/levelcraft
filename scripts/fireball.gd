@@ -45,6 +45,10 @@ func _physics_process(delta: float) -> void:
 			(other as Goomba).kill(direction * 60.0)
 			_explode()
 			return
+		elif other is Boss:
+			(other as Boss).take_fireball_hit()
+			_explode()
+			return
 	if is_on_wall():
 		_explode()
 		return

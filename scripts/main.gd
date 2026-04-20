@@ -62,6 +62,12 @@ func _load_level(json_path: String) -> void:
 		var cam := player.get_node_or_null("Camera2D") as Camera2D
 		if cam != null:
 			cam.reset_smoothing()
+	elif LevelRenderer.has_spawn_position():
+		player.position = LevelRenderer.get_spawn_position()
+		player.velocity = Vector2.ZERO
+		var cam := player.get_node_or_null("Camera2D") as Camera2D
+		if cam != null:
+			cam.reset_smoothing()
 
 	_play_music(data.get("music", ""))
 
