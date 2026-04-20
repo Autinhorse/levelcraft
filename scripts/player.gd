@@ -136,6 +136,18 @@ func _physics_process(delta: float) -> void:
 			elif turtle.is_dangerous():
 				take_damage()
 				return
+		elif other is FlyTurtle:
+			var fly := other as FlyTurtle
+			if star_invincible:
+				fly.kill(velocity.x * 0.3)
+				_play_sfx("kickkill.wav")
+			elif col.get_normal().y < -0.7:
+				fly.on_stomped()
+				velocity.y = STOMP_BOUNCE
+				_play_sfx("bump.wav")
+			else:
+				take_damage()
+				return
 		elif other is QuestionBlock:
 			if col.get_normal().y > 0.7:
 				(other as QuestionBlock).hit(self)

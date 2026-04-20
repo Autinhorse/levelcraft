@@ -249,6 +249,8 @@ const PIPE_ENTRY_SCENE := preload("res://scenes/pipe_entry.tscn")
 const MAP_COIN_SCENE := preload("res://scenes/map_coin.tscn")
 const MIDDLE_POINT_SCENE := preload("res://scenes/middle_point.tscn")
 const PLATFORM_SCENE := preload("res://scenes/platform.tscn")
+const FLYTURTLE_SCENE := preload("res://scenes/flyturtle.tscn")
+const PATH_PLATFORM_SCENE := preload("res://scenes/path_platform.tscn")
 
 static func _spawn_complex(parent: Node, spec: String, px: Vector2, col: int, row: int, map_style: int) -> void:
 	var entity: String = spec.substr(1)
@@ -281,8 +283,22 @@ static func _spawn_complex(parent: Node, spec: String, px: Vector2, col: int, ro
 		_spawn_pipe_entry(parent, entity.substr(5), px, col, row, map_style)
 	elif entity.begins_with("platform:"):
 		_spawn_moving_platform(parent, entity.substr(9), col, row)
+	elif entity.begins_with("flyturtle:"):
+		_spawn_flyturtle(parent, entity.substr(10), col, row)
 	else:
 		print("[LevelRenderer] unknown entity '%s' at (%d,%d) style=%d" % [spec, col, row, map_style])
+
+static func _spawn_flyturtle(parent: Node, rest: String, col: int, row: int) -> void:
+	var parts := rest.split(",", true, 1)
+	if parts.size() < 2:
+		push_warning("[flyturtle] bad spec: %s" % rest)
+		return
+	var dx := int(parts[0])
+	var dy := int(parts[1])
+	var ft := FLYTURTLE_SCENE.instantiate()
+	ft.point_a = Vector2(col * TILE_SIZE + TILE_SIZE / 2.0, row * TILE_SIZE + TILE_SIZE)
+	ft.point_b = Vector2((col + dx) * TILE_SIZE + TILE_SIZE / 2.0, (row + dy) * TILE_SIZE + TILE_SIZE)
+	parent.add_child(ft)
 
 static func _spawn_moving_platform(parent: Node, rest: String, col: int, row: int) -> void:
 	var parts := rest.split(":", true, 1)
@@ -290,15 +306,30 @@ static func _spawn_moving_platform(parent: Node, rest: String, col: int, row: in
 		push_warning("[platform] bad spec: %s" % rest)
 		return
 	var length := maxi(int(parts[0]), 1)
-	var dir := parts[1]
-	if dir != "u" and dir != "d":
-		push_warning("[platform] bad direction: %s" % dir)
+	var second := parts[1]
+	var center_x := col * TILE_SIZE + length * TILE_SIZE / 2.0
+	var center_y := row * TILE_SIZE + 4.0
+	if "," in second:
+		var offsets := second.split(",", true, 1)
+		if offsets.size() < 2:
+			push_warning("[platform] bad offsets: %s" % second)
+			return
+		var dx := int(offsets[0])
+		var dy := int(offsets[1])
+		var pp := PATH_PLATFORM_SCENE.instantiate()
+		pp.length_tiles = length
+		pp.point_a = Vector2(center_x, center_y)
+		pp.point_b = Vector2(center_x + dx * TILE_SIZE, center_y + dy * TILE_SIZE)
+		parent.add_child(pp)
+		return
+	if second != "u" and second != "d":
+		push_warning("[platform] bad direction: %s" % second)
 		return
 	var plat := PLATFORM_SCENE.instantiate()
 	plat.length_tiles = length
-	plat.direction = dir
+	plat.direction = second
 	plat.map_rows = _current_grid.size()
-	plat.position = Vector2(col * TILE_SIZE + length * TILE_SIZE / 2.0, row * TILE_SIZE + 4.0)
+	plat.position = Vector2(center_x, center_y)
 	parent.add_child(plat)
 
 static func _spawn_pipe_entry(parent: Node, rest: String, px: Vector2, col: int, row: int, map_style: int) -> void:

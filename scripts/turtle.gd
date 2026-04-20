@@ -62,6 +62,10 @@ func _physics_process(delta: float) -> void:
 	if not alive or not active:
 		return
 
+	if position.y > KILL_EXIT_Y:
+		queue_free()
+		return
+
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
 
@@ -96,6 +100,9 @@ func _physics_process(delta: float) -> void:
 			killed_enemy = true
 		elif state == State.SHELL_SLIDING and other is Turtle and other != self:
 			(other as Turtle).kill(direction * 60.0)
+			killed_enemy = true
+		elif state == State.SHELL_SLIDING and other is FlyTurtle:
+			(other as FlyTurtle).kill(direction * 60.0)
 			killed_enemy = true
 
 	if is_on_wall() and not killed_enemy:

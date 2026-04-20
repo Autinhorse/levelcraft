@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://d1m58ra18eaea"]
+
+[ext_resource type="Script" path="res://scripts/flyturtle.gd" id="1_script"]
+
+[node name="FlyTurtle" type="CharacterBody2D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1_script")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
