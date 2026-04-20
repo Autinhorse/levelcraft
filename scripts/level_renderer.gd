@@ -10,6 +10,7 @@ static var _configs_loaded: bool = false
 static var _current_csv_path: String = ""
 static var _current_area_index: int = 0
 static var _current_map_style: int = 0
+static var _current_grid: Array = []
 
 static func render_area(parent: Node, csv_path: String, map_style: int, area_index: int = 0) -> Vector2i:
 	_ensure_configs()
@@ -18,6 +19,7 @@ static func render_area(parent: Node, csv_path: String, map_style: int, area_ind
 	_current_map_style = map_style
 	print("[lr] render_area start csv=", csv_path, " catalog_size=", _catalog.size(), " visuals_size=", _visuals.size())
 	var grid := _parse_csv(csv_path)
+	_current_grid = grid
 	print("[lr] grid rows=", grid.size(), " first_row_cols=", (grid[0].size() if grid.size() > 0 else 0))
 	var max_cols := 0
 	for row_idx in grid.size():
@@ -54,6 +56,46 @@ static func _parse_csv(path: String) -> Array:
 			cells.append(_unquote(cell.strip_edges()))
 		grid.append(cells)
 	return grid
+
+static func _get_cell(col: int, row: int) -> String:
+	if row < 0 or row >= _current_grid.size():
+		return ""
+	var row_arr: Array = _current_grid[row]
+	if col < 0 or col >= row_arr.size():
+		return ""
+	return str(row_arr[col])
+
+static func _detect_piranha_direction(col: int, row: int) -> String:
+	# Look at neighbor cells for an adjacent pipe opening.
+	var below := _get_cell(col, row + 1)
+	if below in ["4", "5"] or below.begins_with("*pipe-u:"):
+		return "u"
+	var above := _get_cell(col, row - 1)
+	if above in ["10", "11"] or above.begins_with("*pipe-d:"):
+		return "d"
+	var right := _get_cell(col + 1, row)
+	if right in ["12", "14"] or right.begins_with("*pipe-l:"):
+		return "l"
+	var left := _get_cell(col - 1, row)
+	if left in ["17", "19"] or left.begins_with("*pipe-r:"):
+		return "r"
+	return "u"  # default
+
+static func _piranha_exposed_position(col: int, row: int, dir: String) -> Vector2:
+	var px := Vector2(col * TILE_SIZE, row * TILE_SIZE)
+	match dir:
+		"u":
+			return px + Vector2(TILE_SIZE, 11)
+		"d":
+			# Hidden 5px up from row baseline; emerge 22
+			return px + Vector2(TILE_SIZE, 17)
+		"l":
+			# Hidden 2px deeper right; emerge 21 → exposed shifts 3px left from old (8)
+			return px + Vector2(5, TILE_SIZE + 6)
+		"r":
+			# Hidden 2px deeper left; emerge 21 → exposed shifts 3px right from old (8)
+			return px + Vector2(11, TILE_SIZE + 6)
+	return px + Vector2(TILE_SIZE, TILE_SIZE)
 
 static func _unquote(s: String) -> String:
 	if s.length() >= 2 and s.begins_with('"') and s.ends_with('"'):
@@ -99,6 +141,14 @@ static func _spawn_tile(parent: Node, id_str: String, px: Vector2, col: int, row
 		var turtle := TURTLE_SCENE.instantiate()
 		turtle.position = px + Vector2(TILE_SIZE / 2.0, TILE_SIZE)
 		parent.add_child(turtle)
+		return
+
+	if str(meta.get("name", "")) == "piranha":
+		var dir := _detect_piranha_direction(col, row)
+		var piranha := PIRANHA_SCENE.instantiate()
+		piranha.direction = dir
+		piranha.position = _piranha_exposed_position(col, row, dir)
+		parent.add_child(piranha)
 		return
 
 	if str(meta.get("name", "")) == "middle_point":
@@ -191,12 +241,14 @@ static func _palette_color(name: String) -> Color:
 
 const GOOMBA_SCENE := preload("res://scenes/goomba.tscn")
 const TURTLE_SCENE := preload("res://scenes/turtle.tscn")
+const PIRANHA_SCENE := preload("res://scenes/piranha.tscn")
 const QUESTION_BLOCK_SCENE := preload("res://scenes/question_block.tscn")
 const BRICK_BLOCK_SCENE := preload("res://scenes/brick_block.tscn")
 const END_FLAG_SCENE := preload("res://scenes/end_flag.tscn")
 const PIPE_ENTRY_SCENE := preload("res://scenes/pipe_entry.tscn")
 const MAP_COIN_SCENE := preload("res://scenes/map_coin.tscn")
 const MIDDLE_POINT_SCENE := preload("res://scenes/middle_point.tscn")
+const PLATFORM_SCENE := preload("res://scenes/platform.tscn")
 
 static func _spawn_complex(parent: Node, spec: String, px: Vector2, col: int, row: int, map_style: int) -> void:
 	var entity: String = spec.substr(1)
@@ -227,8 +279,27 @@ static func _spawn_complex(parent: Node, spec: String, px: Vector2, col: int, ro
 		parent.add_child(flag)
 	elif entity.begins_with("pipe-"):
 		_spawn_pipe_entry(parent, entity.substr(5), px, col, row, map_style)
+	elif entity.begins_with("platform:"):
+		_spawn_moving_platform(parent, entity.substr(9), col, row)
 	else:
 		print("[LevelRenderer] unknown entity '%s' at (%d,%d) style=%d" % [spec, col, row, map_style])
+
+static func _spawn_moving_platform(parent: Node, rest: String, col: int, row: int) -> void:
+	var parts := rest.split(":", true, 1)
+	if parts.size() < 2:
+		push_warning("[platform] bad spec: %s" % rest)
+		return
+	var length := maxi(int(parts[0]), 1)
+	var dir := parts[1]
+	if dir != "u" and dir != "d":
+		push_warning("[platform] bad direction: %s" % dir)
+		return
+	var plat := PLATFORM_SCENE.instantiate()
+	plat.length_tiles = length
+	plat.direction = dir
+	plat.map_rows = _current_grid.size()
+	plat.position = Vector2(col * TILE_SIZE + length * TILE_SIZE / 2.0, row * TILE_SIZE + 4.0)
+	parent.add_child(plat)
 
 static func _spawn_pipe_entry(parent: Node, rest: String, px: Vector2, col: int, row: int, map_style: int) -> void:
 	var parts := rest.split(":", true, 1)

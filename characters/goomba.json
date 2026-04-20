@@ -4,7 +4,7 @@
   "forms": {
     "default": {
       "spritesPath": "res://sprites/goomba",
-      "collision": { "width": 16, "height": 16 },
+      "collision": { "width": 16, "height": 14 },
       "animations": {
         "walk":     { "frames": 2, "fps": 5, "loop": true  },
         "squished": { "frames": 1, "fps": 1, "loop": false },

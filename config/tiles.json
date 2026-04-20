@@ -45,5 +45,6 @@
   "50": { "name": "coin",           "solid": false },
   "51": { "name": "middle_point",   "solid": false },
   "60": { "name": "goomba",         "solid": false },
-  "61": { "name": "turtle",         "solid": false }
+  "61": { "name": "turtle",         "solid": false },
+  "62": { "name": "piranha",        "solid": false }
 }

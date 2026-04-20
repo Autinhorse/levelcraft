@@ -78,14 +78,7 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
-	if is_on_wall():
-		direction = -direction
-		if state == State.SHELL_SLIDING:
-			shell_bounced = true
-
-	if state == State.WALKING and is_on_floor() and not _has_floor_ahead():
-		direction = -direction
-
+	var killed_enemy := false
 	for i in get_slide_collision_count():
 		var col := get_slide_collision(i)
 		var other := col.get_collider()
@@ -100,8 +93,18 @@ func _physics_process(delta: float) -> void:
 				p.take_damage()
 		elif state == State.SHELL_SLIDING and other is Goomba:
 			(other as Goomba).kill(direction * 60.0)
+			killed_enemy = true
 		elif state == State.SHELL_SLIDING and other is Turtle and other != self:
 			(other as Turtle).kill(direction * 60.0)
+			killed_enemy = true
+
+	if is_on_wall() and not killed_enemy:
+		direction = -direction
+		if state == State.SHELL_SLIDING:
+			shell_bounced = true
+
+	if state == State.WALKING and is_on_floor() and not _has_floor_ahead():
+		direction = -direction
 
 func _has_floor_ahead() -> bool:
 	var space := get_world_2d().direct_space_state

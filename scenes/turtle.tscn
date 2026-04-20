@@ -4,7 +4,7 @@
 
 [node name="Turtle" type="CharacterBody2D"]
 collision_layer = 4
-collision_mask = 3
+collision_mask = 7
 script = ExtResource("1_script")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]

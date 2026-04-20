@@ -25,10 +25,12 @@ var dead: bool = false
 var transforming: bool = false
 var invincible: bool = false
 var star_invincible: bool = false
+var crouching: bool = false
 var active_fireballs: Array = []
 var run_duration: float = 0.0
 var inertia_active: bool = false
 var _star_flash_tween: Tween = null
+var _crouch_shape: RectangleShape2D = null
 
 func _ready() -> void:
 	char_data = CharacterLoader.load_from_json(character_json_path)
@@ -69,10 +71,12 @@ func _physics_process(delta: float) -> void:
 	if transforming:
 		return
 
+	_update_crouch()
+
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
 
-	if Input.is_action_just_pressed("jump") and is_on_floor():
+	if Input.is_action_just_pressed("jump") and is_on_floor() and not crouching:
 		velocity.y = JUMP_VELOCITY
 		_play_sfx("jumpsmall.wav" if current_form == "small" else "jump.wav")
 
@@ -261,6 +265,34 @@ func _shoot_fireball() -> void:
 	active_fireballs.append(ball)
 	_play_sfx("fire.wav")
 
+func _update_crouch() -> void:
+	# Small form has no crouch; never crouch.
+	if current_form == "small":
+		if crouching:
+			_exit_crouch()
+		return
+	var want := is_on_floor() and Input.is_action_pressed("move_down")
+	if want and not crouching:
+		_enter_crouch()
+	elif not want and crouching:
+		_exit_crouch()
+
+func _enter_crouch() -> void:
+	crouching = true
+	if _crouch_shape == null:
+		_crouch_shape = RectangleShape2D.new()
+		_crouch_shape.size = Vector2(14, 14)
+	collision.shape = _crouch_shape
+	collision.position = Vector2(0, -7)
+	if sprite.sprite_frames != null and sprite.sprite_frames.has_animation("crouch"):
+		sprite.play("crouch")
+
+func _exit_crouch() -> void:
+	crouching = false
+	var form: CharacterLoader.FormData = char_data.forms[current_form]
+	collision.shape = form.shape
+	collision.position = Vector2(0, -form.size.y / 2.0)
+
 func _play_sfx(sound_name: String) -> void:
 	var path := "res://Sound/" + sound_name
 	if not ResourceLoader.exists(path):
@@ -270,6 +302,10 @@ func _play_sfx(sound_name: String) -> void:
 
 func _update_animation() -> void:
 	if sprite.sprite_frames == null:
+		return
+	if crouching:
+		if sprite.sprite_frames.has_animation("crouch") and sprite.animation != "crouch":
+			sprite.play("crouch")
 		return
 	var next := ""
 	if not is_on_floor():

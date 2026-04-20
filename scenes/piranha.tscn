@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://bxkjx6s7camuq"]
+
+[ext_resource type="Script" path="res://scripts/piranha.gd" id="1_script"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
+size = Vector2(14, 14)
+
+[node name="Piranha" type="Node2D"]
+z_index = -1
+script = ExtResource("1_script")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+offset = Vector2(0, -6)
+
+[node name="Area2D" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D"]
+position = Vector2(0, -8)
+shape = SubResource("RectangleShape2D_1")
