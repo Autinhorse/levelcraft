@@ -16,7 +16,7 @@ func _ready() -> void:
 	var rect := RectangleShape2D.new()
 	rect.size = Vector2(w, h)
 	shape.shape = rect
-	shape.position = Vector2(16.0, 0.0)
+	shape.position = Vector2(64.0, 0.0)
 	area.body_entered.connect(_on_body_entered)
 
 func _on_body_entered(body: Node) -> void:

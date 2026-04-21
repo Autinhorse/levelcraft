@@ -57,6 +57,8 @@
   "41": { "0": "res://sprites/tiles/overworld/pipe_cross_bl.png" },
   "42": { "0": "res://sprites/tiles/overworld/pipe_cross_br.png" },
   "43": { "0": "res://sprites/tiles/overworld/stone.png" },
+  "44": { "0": "res://sprites/tiles/overworld/castle_0.png" },
+  "45": { "0": "res://sprites/tiles/overworld/castle_1.png" },
   "70": { "0": "res://sprites/platform/platform-left.png" },
   "71": { "0": "res://sprites/platform/platform-middle.png" },
   "72": { "0": "res://sprites/platform/platform-right.png" },

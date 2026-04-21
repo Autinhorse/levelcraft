@@ -34,7 +34,7 @@ static func _build_form(char_name: String, form_name: String, form_json: Diction
 	var form := FormData.new()
 
 	var coll: Dictionary = form_json.get("collision", {})
-	form.size = Vector2(int(coll.get("width", 16)), int(coll.get("height", 16)))
+	form.size = Vector2(int(coll.get("width", 64)), int(coll.get("height", 64)))
 	form.shape = RectangleShape2D.new()
 	form.shape.size = form.size
 

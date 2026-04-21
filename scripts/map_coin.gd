@@ -67,12 +67,12 @@ static func _get_frames() -> SpriteFrames:
 	return frames
 
 static func _make_placeholder() -> ImageTexture:
-	var img := Image.create(8, 12, false, Image.FORMAT_RGBA8)
+	var img := Image.create(32, 48, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	for y in range(12):
-		for x in range(8):
-			var cx := float(x) - 3.5
-			var cy := float(y) - 5.5
-			if cx * cx / 9.0 + cy * cy / 25.0 <= 1.0:
+	for y in range(48):
+		for x in range(32):
+			var cx := float(x) - 15.5
+			var cy := float(y) - 23.5
+			if cx * cx / 144.0 + cy * cy / 400.0 <= 1.0:
 				img.set_pixel(x, y, Color(1.0, 0.85, 0.15, 1.0))
 	return ImageTexture.create_from_image(img)

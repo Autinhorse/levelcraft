@@ -1,7 +1,7 @@
 class_name MiddlePoint
 extends Area2D
 
-const RISE_HEIGHT := 40.0
+const RISE_HEIGHT := 160.0
 const RISE_TIME := 0.8
 
 @onready var sprite: Sprite2D = $Sprite2D
@@ -44,12 +44,12 @@ static func _get_texture() -> Texture2D:
 	var path := "res://sprites/tiles/overworld/middle.png"
 	if ResourceLoader.exists(path):
 		return load(path) as Texture2D
-	var img := Image.create(12, 16, false, Image.FORMAT_RGBA8)
+	var img := Image.create(48, 64, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0.2, 0.9, 0.5, 1.0))
-	for y in range(16):
+	for y in range(64):
 		img.set_pixel(0, y, Color.BLACK)
-		img.set_pixel(11, y, Color.BLACK)
-	for x in range(12):
+		img.set_pixel(47, y, Color.BLACK)
+	for x in range(48):
 		img.set_pixel(x, 0, Color.BLACK)
-		img.set_pixel(x, 15, Color.BLACK)
+		img.set_pixel(x, 63, Color.BLACK)
 	return ImageTexture.create_from_image(img)

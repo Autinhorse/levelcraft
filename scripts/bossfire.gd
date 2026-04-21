@@ -1,8 +1,8 @@
 class_name BossFire
 extends Area2D
 
-const SPEED := 100.0
-const TILE_SIZE := 16
+const SPEED := 400.0
+const TILE_SIZE := 64
 const FRAME_COUNT := 2
 const FPS := 5.0
 const SPRITE_DIR := "res://sprites/boss"
@@ -51,6 +51,6 @@ func _build_frames() -> SpriteFrames:
 	return frames
 
 static func _make_placeholder() -> ImageTexture:
-	var img := Image.create(12, 12, false, Image.FORMAT_RGBA8)
+	var img := Image.create(48, 48, false, Image.FORMAT_RGBA8)
 	img.fill(Color(1.0, 0.4, 0.0))
 	return ImageTexture.create_from_image(img)

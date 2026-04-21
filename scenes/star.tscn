@@ -3,10 +3,10 @@
 [ext_resource type="Script" path="res://scripts/star.gd" id="1_script"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
-size = Vector2(14, 14)
+size = Vector2(56, 56)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_2"]
-size = Vector2(14, 14)
+size = Vector2(56, 56)
 
 [node name="Star" type="CharacterBody2D"]
 z_index = -1
@@ -15,10 +15,10 @@ collision_mask = 1
 script = ExtResource("1_script")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
-position = Vector2(0, -8)
+position = Vector2(0, -32)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, -7)
+position = Vector2(0, -28)
 shape = SubResource("RectangleShape2D_1")
 
 [node name="PickupArea" type="Area2D" parent="."]
@@ -26,5 +26,5 @@ collision_layer = 0
 collision_mask = 2
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="PickupArea"]
-position = Vector2(0, -7)
+position = Vector2(0, -28)
 shape = SubResource("RectangleShape2D_2")

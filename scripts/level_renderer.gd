@@ -1,6 +1,6 @@
 class_name LevelRenderer extends RefCounted
 
-const TILE_SIZE := 16
+const TILE_SIZE := 64
 const CATALOG_PATH := "res://config/tiles.json"
 const VISUALS_PATH := "res://config/tile_visuals.json"
 
@@ -97,16 +97,16 @@ static func _piranha_exposed_position(col: int, row: int, dir: String) -> Vector
 	var px := Vector2(col * TILE_SIZE, row * TILE_SIZE)
 	match dir:
 		"u":
-			return px + Vector2(TILE_SIZE, 11)
+			return px + Vector2(TILE_SIZE, 44)
 		"d":
 			# Hidden 5px up from row baseline; emerge 22
-			return px + Vector2(TILE_SIZE, 17)
+			return px + Vector2(TILE_SIZE, 68)
 		"l":
 			# Hidden 2px deeper right; emerge 21 → exposed shifts 3px left from old (8)
-			return px + Vector2(5, TILE_SIZE + 6)
+			return px + Vector2(20, TILE_SIZE + 24)
 		"r":
 			# Hidden 2px deeper left; emerge 21 → exposed shifts 3px right from old (8)
-			return px + Vector2(11, TILE_SIZE + 6)
+			return px + Vector2(44, TILE_SIZE + 24)
 	return px + Vector2(TILE_SIZE, TILE_SIZE)
 
 static func _unquote(s: String) -> String:
@@ -170,6 +170,12 @@ static func _spawn_tile(parent: Node, id_str: String, px: Vector2, col: int, row
 
 	if str(meta.get("name", "")) == "lava_bottom":
 		_spawn_lava_kill(parent, id_str, px, map_style, meta)
+		return
+
+	if str(meta.get("name", "")) == "princess":
+		var p := PRINCESS_SCENE.instantiate()
+		p.position = px + Vector2(TILE_SIZE / 2.0, TILE_SIZE / 2.0)
+		parent.add_child(p)
 		return
 
 	if str(meta.get("name", "")) == "middle_point":
@@ -298,6 +304,7 @@ const FLYTURTLE_SCENE := preload("res://scenes/flyturtle.tscn")
 const PATH_PLATFORM_SCENE := preload("res://scenes/path_platform.tscn")
 const FIREBAR_SCENE := preload("res://scenes/firebar.tscn")
 const BOSS_SCENE := preload("res://scenes/boss.tscn")
+const PRINCESS_SCENE := preload("res://scenes/princess.tscn")
 
 static func _spawn_complex(parent: Node, spec: String, px: Vector2, col: int, row: int, map_style: int) -> void:
 	var entity: String = spec.substr(1)

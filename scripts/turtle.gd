@@ -3,14 +3,14 @@ extends CharacterBody2D
 
 enum State { WALKING, SHELL_STILL, SHELL_SLIDING }
 
-const WALK_SPEED := 30.0
-const SLIDE_SPEED := 200.0
-const GRAVITY := 490.0
+const WALK_SPEED := 120.0
+const SLIDE_SPEED := 800.0
+const GRAVITY := 1960.0
 const SHELL_REVERT_TIME := 5.0
-const ACTIVATION_MARGIN := 48.0
+const ACTIVATION_MARGIN := 192.0
 const SLIDE_GRACE := 0.3
-const KILL_LAUNCH_VY := -160.0
-const KILL_EXIT_Y := 400.0
+const KILL_LAUNCH_VY := -640.0
+const KILL_EXIT_Y := 1600.0
 const CHARACTER_JSON := "res://characters/turtle.json"
 
 @onready var sprite: AnimatedSprite2D = $AnimatedSprite2D
@@ -45,7 +45,7 @@ func _ready() -> void:
 
 func _setup_activation_notifier() -> void:
 	var notifier := VisibleOnScreenNotifier2D.new()
-	notifier.rect = Rect2(-ACTIVATION_MARGIN - 8.0, -16.0, ACTIVATION_MARGIN + 16.0, 16.0)
+	notifier.rect = Rect2(-ACTIVATION_MARGIN - 32.0, -64.0, ACTIVATION_MARGIN + 64.0, 64.0)
 	notifier.screen_entered.connect(_on_screen_entered)
 	add_child(notifier)
 
@@ -89,20 +89,20 @@ func _physics_process(delta: float) -> void:
 		if other is Player:
 			var p := other as Player
 			if p.star_invincible:
-				kill(direction * 60.0)
+				kill(direction * 240.0)
 			elif col.get_normal().y > 0.7:
 				# player is above; player side handles the stomp, skip here
 				pass
 			elif is_dangerous():
 				p.take_damage()
 		elif state == State.SHELL_SLIDING and other is Goomba:
-			(other as Goomba).kill(direction * 60.0)
+			(other as Goomba).kill(direction * 240.0)
 			killed_enemy = true
 		elif state == State.SHELL_SLIDING and other is Turtle and other != self:
-			(other as Turtle).kill(direction * 60.0)
+			(other as Turtle).kill(direction * 240.0)
 			killed_enemy = true
 		elif state == State.SHELL_SLIDING and other is FlyTurtle:
-			(other as FlyTurtle).kill(direction * 60.0)
+			(other as FlyTurtle).kill(direction * 240.0)
 			killed_enemy = true
 
 	if is_on_wall() and not killed_enemy:
@@ -116,8 +116,8 @@ func _physics_process(delta: float) -> void:
 func _has_floor_ahead() -> bool:
 	var space := get_world_2d().direct_space_state
 	var params := PhysicsRayQueryParameters2D.new()
-	params.from = position + Vector2(direction * 10.0, -4.0)
-	params.to = params.from + Vector2(0, 12.0)
+	params.from = position + Vector2(direction * 40.0, -16.0)
+	params.to = params.from + Vector2(0, 48.0)
 	params.collision_mask = 1
 	return not space.intersect_ray(params).is_empty()
 

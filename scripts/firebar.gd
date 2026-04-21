@@ -1,11 +1,11 @@
 class_name FireBar
 extends Node2D
 
-const SPACING := 8.0
-const TILE_SIZE := 16.0
+const SPACING := 32.0
+const TILE_SIZE := 64.0
 const ANGLE_STEPS := 12
 const ROT_SPEED := PI / 2.0
-const FIRE_RADIUS := 4.0
+const FIRE_RADIUS := 16.0
 const FPS := 12.0
 const SPIN_FRAMES := 4
 const FIRE_SPRITE_DIR := "res://sprites/fireball"
@@ -116,12 +116,12 @@ func _build_fire_frames() -> SpriteFrames:
 	return frames
 
 static func _make_placeholder() -> ImageTexture:
-	var img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	var img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	for y in range(8):
-		for x in range(8):
-			var dx := float(x) - 3.5
-			var dy := float(y) - 3.5
-			if dx * dx + dy * dy <= 12.25:
+	for y in range(32):
+		for x in range(32):
+			var dx := float(x) - 15.5
+			var dy := float(y) - 15.5
+			if dx * dx + dy * dy <= 196.0:
 				img.set_pixel(x, y, Color(1.0, 0.5, 0.1))
 	return ImageTexture.create_from_image(img)

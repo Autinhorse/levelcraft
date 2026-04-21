@@ -1,9 +1,9 @@
 class_name PathPlatform
 extends AnimatableBody2D
 
-const AVG_SPEED := 40.0
-const TILE_SIZE := 16
-const THICKNESS := 8
+const AVG_SPEED := 160.0
+const TILE_SIZE := 64
+const THICKNESS := 32
 const SPRITE_PATH := "res://sprites/platform/platform.png"
 
 @export var length_tiles: int = 3

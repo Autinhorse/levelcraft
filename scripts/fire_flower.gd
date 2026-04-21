@@ -1,7 +1,7 @@
 class_name FireFlower
 extends Node2D
 
-const EMERGE_HEIGHT := 8.0
+const EMERGE_HEIGHT := 32.0
 const EMERGE_TIME := 0.5
 
 @onready var sprite: Sprite2D = $Sprite2D

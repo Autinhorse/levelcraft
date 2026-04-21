@@ -1,7 +1,7 @@
 class_name BrickBlock
 extends StaticBody2D
 
-const BUMP_HEIGHT := 6.0
+const BUMP_HEIGHT := 24.0
 const BUMP_TIME := 0.08
 const FRAGMENT_COUNT := 5
 const FRAGMENT_SCENE := preload("res://scenes/brick_fragment.tscn")
@@ -57,6 +57,6 @@ func _spawn_fragments() -> void:
 		var t: float = 0.0 if FRAGMENT_COUNT == 1 else float(i) / float(FRAGMENT_COUNT - 1)
 		var angle_deg: float = lerpf(140.0, 40.0, t) + randf_range(-12.0, 12.0)
 		var angle_rad: float = deg_to_rad(angle_deg)
-		var speed: float = randf_range(150.0, 220.0)
+		var speed: float = randf_range(600.0, 880.0)
 		frag.velocity = Vector2(cos(angle_rad), -sin(angle_rad)) * speed
 		parent.add_child(frag)

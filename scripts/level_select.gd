@@ -13,22 +13,22 @@ func _make_world_block(world: int) -> VBoxContainer:
 	var block := VBoxContainer.new()
 	block.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	block.alignment = BoxContainer.ALIGNMENT_BEGIN
-	block.add_theme_constant_override("separation", 3)
+	block.add_theme_constant_override("separation", 12)
 
 	var label := Label.new()
 	label.text = "World %d" % world
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	label.add_theme_font_size_override("font_size", 10)
+	label.add_theme_font_size_override("font_size", 40)
 	block.add_child(label)
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_BEGIN
-	row.add_theme_constant_override("separation", 4)
+	row.add_theme_constant_override("separation", 16)
 	for level in range(1, LEVELS_PER_WORLD + 1):
 		var btn := Button.new()
 		btn.text = str(level)
-		btn.custom_minimum_size = Vector2(22, 16)
-		btn.add_theme_font_size_override("font_size", 9)
+		btn.custom_minimum_size = Vector2(88, 64)
+		btn.add_theme_font_size_override("font_size", 36)
 		btn.pressed.connect(_on_level_selected.bind(world, level))
 		row.add_child(btn)
 	block.add_child(row)

@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://scripts/map_coin.gd" id="1_script"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
-size = Vector2(10, 12)
+size = Vector2(40, 48)
 
 [node name="MapCoin" type="Area2D"]
 collision_layer = 0

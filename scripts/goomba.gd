@@ -1,12 +1,12 @@
 class_name Goomba
 extends CharacterBody2D
 
-const SPEED := 30.0
-const GRAVITY := 490.0
+const SPEED := 120.0
+const GRAVITY := 1960.0
 const SQUISH_LINGER := 0.4
-const ACTIVATION_MARGIN := 48.0  # 3 tiles off right edge
-const KILL_LAUNCH_VY := -160.0  # peaks ~1 tile up (26px) at g=490
-const KILL_EXIT_Y := 400.0
+const ACTIVATION_MARGIN := 192.0  # 3 tiles off right edge
+const KILL_LAUNCH_VY := -640.0  # peaks ~1 tile up at g=1960
+const KILL_EXIT_Y := 1600.0
 
 @export_file("*.json") var character_json_path: String = "res://characters/goomba.json"
 
@@ -36,7 +36,7 @@ func _ready() -> void:
 
 func _setup_activation_notifier() -> void:
 	var notifier := VisibleOnScreenNotifier2D.new()
-	notifier.rect = Rect2(-ACTIVATION_MARGIN - 8.0, -16.0, ACTIVATION_MARGIN + 16.0, 16.0)
+	notifier.rect = Rect2(-ACTIVATION_MARGIN - 32.0, -64.0, ACTIVATION_MARGIN + 64.0, 64.0)
 	notifier.screen_entered.connect(_on_screen_entered)
 	add_child(notifier)
 
@@ -64,7 +64,7 @@ func _physics_process(delta: float) -> void:
 		var other := col.get_collider()
 		if other is Player:
 			if (other as Player).star_invincible:
-				kill(direction * 60.0)
+				kill(direction * 240.0)
 			elif col.get_normal().y > 0.7:
 				squish()
 			else:

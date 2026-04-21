@@ -9,7 +9,7 @@ const MUSHROOM_SCENE := preload("res://scenes/mushroom.tscn")
 const FIRE_FLOWER_SCENE := preload("res://scenes/fire_flower.tscn")
 const STAR_SCENE := preload("res://scenes/star.tscn")
 
-const BUMP_HEIGHT := 6.0
+const BUMP_HEIGHT := 24.0
 const BUMP_TIME := 0.08
 
 @onready var sprite: Sprite2D = $Sprite2D
@@ -92,9 +92,9 @@ static func _kill_enemies_above(block: Node2D) -> void:
 	var space := block.get_world_2d().direct_space_state
 	var params := PhysicsShapeQueryParameters2D.new()
 	var rect := RectangleShape2D.new()
-	rect.size = Vector2(16, 16)
+	rect.size = Vector2(64, 64)
 	params.shape = rect
-	params.transform = Transform2D(0.0, block.global_position + Vector2(0, -16))
+	params.transform = Transform2D(0.0, block.global_position + Vector2(0, -64))
 	params.collision_mask = 4  # goomba layer
 	for r in space.intersect_shape(params):
 		var body = r["collider"]
@@ -103,7 +103,7 @@ static func _kill_enemies_above(block: Node2D) -> void:
 
 func _spawn_coin() -> void:
 	var coin := COIN_SCENE.instantiate()
-	coin.position = position + Vector2(0, -8)
+	coin.position = position + Vector2(0, -32)
 	get_parent().add_child(coin)
 
 func _spawn_power_up(player: Player) -> void:

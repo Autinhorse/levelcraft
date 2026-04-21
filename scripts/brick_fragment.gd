@@ -1,6 +1,6 @@
 extends Sprite2D
 
-const GRAVITY := 500.0
+const GRAVITY := 2000.0
 const LIFETIME := 1.5
 
 var velocity: Vector2 = Vector2.ZERO

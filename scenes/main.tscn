@@ -9,12 +9,12 @@ script = ExtResource("1_main_script")
 [node name="Background" type="Polygon2D" parent="."]
 z_index = -2
 color = Color(0.5, 0.7, 1.0, 1)
-polygon = PackedVector2Array(0, 0, 368, 0, 368, 240, 0, 240)
+polygon = PackedVector2Array(0, 0, 1472, 0, 1472, 960, 0, 960)
 
 [node name="Level" type="Node2D" parent="."]
 
 [node name="Player" parent="." instance=ExtResource("2_player")]
-position = Vector2(40, 150)
+position = Vector2(160, 600)
 
 [node name="Music" type="AudioStreamPlayer" parent="."]
 
@@ -22,12 +22,12 @@ position = Vector2(40, 150)
 layer = 50
 
 [node name="CoinLabel" type="Label" parent="HUD"]
-offset_left = 5.0
-offset_top = 2.0
-offset_right = 100.0
-offset_bottom = 16.0
+offset_left = 20.0
+offset_top = 8.0
+offset_right = 400.0
+offset_bottom = 64.0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 40
 text = "COINS: 0"
 
 [node name="Overlay" type="CanvasLayer" parent="."]

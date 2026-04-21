@@ -1,9 +1,9 @@
 class_name MovingPlatform
 extends AnimatableBody2D
 
-const SPEED := 40.0
-const TILE_SIZE := 16
-const THICKNESS := 8
+const SPEED := 160.0
+const TILE_SIZE := 64
+const THICKNESS := 32
 const SPRITE_PATH := "res://sprites/platform/platform.png"
 
 @export var length_tiles: int = 3
@@ -53,11 +53,11 @@ func _physics_process(delta: float) -> void:
 func _get_riders() -> Array:
 	var space := get_world_2d().direct_space_state
 	var shape := RectangleShape2D.new()
-	shape.size = Vector2(length_tiles * TILE_SIZE - 2.0, 6.0)
+	shape.size = Vector2(length_tiles * TILE_SIZE - 8.0, 24.0)
 	var params := PhysicsShapeQueryParameters2D.new()
 	params.shape = shape
 	var t := Transform2D()
-	t.origin = position + Vector2(0, -THICKNESS / 2.0 - 3.0)
+	t.origin = position + Vector2(0, -THICKNESS / 2.0 - 12.0)
 	params.transform = t
 	params.collision_mask = 2 | 4
 	params.collide_with_bodies = true

@@ -1,8 +1,8 @@
 class_name FlyTurtle
 extends CharacterBody2D
 
-const AVG_SPEED := 40.0
-const ACTIVATION_MARGIN := 48.0
+const AVG_SPEED := 160.0
+const ACTIVATION_MARGIN := 192.0
 const FRAME_COUNT := 2
 const FPS := 5.0
 const SPRITE_DIR := "res://sprites/turtle"
@@ -21,12 +21,12 @@ var alive: bool = true
 
 func _ready() -> void:
 	sprite.sprite_frames = _build_frames()
-	sprite.offset = Vector2(0, -7)
+	sprite.offset = Vector2(0, -28)
 	sprite.play("fly")
 	var shape := RectangleShape2D.new()
-	shape.size = Vector2(14, 14)
+	shape.size = Vector2(56, 56)
 	collision.shape = shape
-	collision.position = Vector2(0, -7)
+	collision.position = Vector2(0, -28)
 	var dist := point_a.distance_to(point_b)
 	if dist > 0.01:
 		omega = AVG_SPEED * PI / dist
@@ -35,7 +35,7 @@ func _ready() -> void:
 
 func _setup_activation_notifier() -> void:
 	var notifier := VisibleOnScreenNotifier2D.new()
-	notifier.rect = Rect2(-ACTIVATION_MARGIN - 8.0, -16.0, ACTIVATION_MARGIN + 16.0, 16.0)
+	notifier.rect = Rect2(-ACTIVATION_MARGIN - 32.0, -64.0, ACTIVATION_MARGIN + 64.0, 64.0)
 	notifier.screen_entered.connect(_on_screen_entered)
 	add_child(notifier)
 
@@ -108,6 +108,6 @@ func _build_frames() -> SpriteFrames:
 	return frames
 
 static func _make_placeholder() -> ImageTexture:
-	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	var img := Image.create(64, 64, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0.3, 0.8, 0.9))
 	return ImageTexture.create_from_image(img)

@@ -1,14 +1,14 @@
 class_name Boss
 extends CharacterBody2D
 
-const AVG_SPEED := 20.0
-const TILE_SIZE := 16
-const JUMP_HEIGHT := 32.0
+const AVG_SPEED := 80.0
+const TILE_SIZE := 64
+const JUMP_HEIGHT := 128.0
 const JUMP_DURATION := 0.8
 const FIRE_INTERVAL := 5.0
 const MAX_HITS := 8
-const GRAVITY := 490.0
-const DEAD_Y := 400.0
+const GRAVITY := 1960.0
+const DEAD_Y := 1600.0
 const FRAME_COUNT := 2
 const FPS := 3.0
 const SPRITE_DIR := "res://sprites/boss"
@@ -33,11 +33,11 @@ var fall_velocity: float = 0.0
 func _ready() -> void:
 	sprite.sprite_frames = _build_frames()
 	sprite.play("idle")
-	sprite.offset = Vector2(0, -16)
+	sprite.offset = Vector2(0, -64)
 	var shape := RectangleShape2D.new()
-	shape.size = Vector2(28, 28)
+	shape.size = Vector2(112, 112)
 	collision.shape = shape
-	collision.position = Vector2(0, -16)
+	collision.position = Vector2(0, -64)
 	var dist := point_a.distance_to(point_b)
 	if dist > 0.01:
 		omega = AVG_SPEED * PI / dist
@@ -80,8 +80,8 @@ func _physics_process(delta: float) -> void:
 func _has_floor_below() -> bool:
 	var space := get_world_2d().direct_space_state
 	var params := PhysicsRayQueryParameters2D.new()
-	params.from = position + Vector2(0, -4)
-	params.to = params.from + Vector2(0, 48)
+	params.from = position + Vector2(0, -16)
+	params.to = params.from + Vector2(0, 192)
 	params.collision_mask = 1
 	return not space.intersect_ray(params).is_empty()
 
@@ -136,6 +136,6 @@ func _build_frames() -> SpriteFrames:
 	return frames
 
 static func _make_placeholder() -> ImageTexture:
-	var img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	var img := Image.create(128, 128, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0.8, 0.2, 0.2))
 	return ImageTexture.create_from_image(img)

@@ -3,16 +3,16 @@ extends Node2D
 
 enum State { HIDDEN, EMERGING, EXPOSED, RETRACTING }
 
-const EMERGE_DIST_U := 21.0
-const EMERGE_DIST_D := 22.0
-const EMERGE_DIST_H := 21.0
+const EMERGE_DIST_U := 84.0
+const EMERGE_DIST_D := 88.0
+const EMERGE_DIST_H := 84.0
 const EMERGE_TIME := 0.5
 const RETRACT_TIME := 0.5
 const HIDDEN_TIME := 2.0
 const EXPOSED_TIME := 2.5
-const PLAYER_AVOID_X := 24.0
-const PLAYER_AVOID_Y := 48.0
-const ACTIVATION_MARGIN := 48.0
+const PLAYER_AVOID_X := 96.0
+const PLAYER_AVOID_Y := 192.0
+const ACTIVATION_MARGIN := 192.0
 const FRAME_COUNT := 2
 const FPS := 3.0
 const SPRITE_DIR := "res://sprites/piranha"
@@ -53,7 +53,7 @@ func _ready() -> void:
 
 func _setup_activation_notifier() -> void:
 	var notifier := VisibleOnScreenNotifier2D.new()
-	notifier.rect = Rect2(-ACTIVATION_MARGIN - 8.0, -EMERGE_DIST_D - 16.0, ACTIVATION_MARGIN + 16.0, 32.0)
+	notifier.rect = Rect2(-ACTIVATION_MARGIN - 32.0, -EMERGE_DIST_D - 64.0, ACTIVATION_MARGIN + 64.0, 128.0)
 	notifier.screen_entered.connect(_on_screen_entered)
 	add_child(notifier)
 
@@ -144,12 +144,12 @@ static func _build_frames(prefix: String = "piranha") -> SpriteFrames:
 	return frames
 
 static func _make_placeholder() -> ImageTexture:
-	var img := Image.create(14, 14, false, Image.FORMAT_RGBA8)
+	var img := Image.create(56, 56, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0.2, 0.7, 0.2, 1.0))
-	for x in range(14):
+	for x in range(56):
 		img.set_pixel(x, 0, Color(0.6, 0.1, 0.1))
-		img.set_pixel(x, 13, Color.BLACK)
-	for y in range(14):
+		img.set_pixel(x, 55, Color.BLACK)
+	for y in range(56):
 		img.set_pixel(0, y, Color.BLACK)
-		img.set_pixel(13, y, Color.BLACK)
+		img.set_pixel(55, y, Color.BLACK)
 	return ImageTexture.create_from_image(img)

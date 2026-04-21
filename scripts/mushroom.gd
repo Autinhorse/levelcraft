@@ -1,9 +1,9 @@
 class_name Mushroom
 extends CharacterBody2D
 
-const SPEED := 80.0
-const GRAVITY := 490.0
-const EMERGE_HEIGHT := 8.0
+const SPEED := 320.0
+const GRAVITY := 1960.0
+const EMERGE_HEIGHT := 32.0
 const EMERGE_TIME := 0.5
 
 @onready var sprite: Sprite2D = $Sprite2D

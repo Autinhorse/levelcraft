@@ -1,15 +1,15 @@
 class_name Player
 extends CharacterBody2D
 
-const SPEED := 100.0
-const DECEL := 200.0
-const JUMP_VELOCITY := -270.0
-const GRAVITY := 490.0
-const FALL_DEATH_Y := 320.0
-const STOMP_BOUNCE := -200.0
-const DEATH_LAUNCH_NORMAL := -250.0
-const DEATH_LAUNCH_FROM_PIT := -500.0
-const DEATH_EXIT_Y := 420.0
+const SPEED := 400.0
+const DECEL := 800.0
+const JUMP_VELOCITY := -1080.0
+const GRAVITY := 1960.0
+const FALL_DEATH_Y := 1280.0
+const STOMP_BOUNCE := -800.0
+const DEATH_LAUNCH_NORMAL := -1000.0
+const DEATH_LAUNCH_FROM_PIT := -2000.0
+const DEATH_EXIT_Y := 1680.0
 const MAX_FIREBALLS := 2
 const FIREBALL_SCENE := preload("res://scenes/fireball.tscn")
 
@@ -183,7 +183,7 @@ func die() -> void:
 	_play_sfx("death.wav")
 	if sprite.sprite_frames != null and sprite.sprite_frames.has_animation("die"):
 		sprite.play("die")
-	var launch := DEATH_LAUNCH_FROM_PIT if position.y > 240.0 else DEATH_LAUNCH_NORMAL
+	var launch := DEATH_LAUNCH_FROM_PIT if position.y > 960.0 else DEATH_LAUNCH_NORMAL
 	velocity = Vector2(0, launch)
 
 func power_up(target_form: String) -> void:
@@ -276,7 +276,7 @@ func _shoot_fireball() -> void:
 	var ball := FIREBALL_SCENE.instantiate()
 	var dir := -1.0 if sprite.flip_h else 1.0
 	get_parent().add_child(ball)
-	ball.setup(position + Vector2(dir * 8.0, -12.0), dir)
+	ball.setup(position + Vector2(dir * 32.0, -48.0), dir)
 	active_fireballs.append(ball)
 	_play_sfx("fire.wav")
 
@@ -296,9 +296,9 @@ func _enter_crouch() -> void:
 	crouching = true
 	if _crouch_shape == null:
 		_crouch_shape = RectangleShape2D.new()
-		_crouch_shape.size = Vector2(14, 14)
+		_crouch_shape.size = Vector2(56, 56)
 	collision.shape = _crouch_shape
-	collision.position = Vector2(0, -7)
+	collision.position = Vector2(0, -28)
 	if sprite.sprite_frames != null and sprite.sprite_frames.has_animation("crouch"):
 		sprite.play("crouch")
 

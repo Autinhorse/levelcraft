@@ -12,6 +12,6 @@ script = ExtResource("1_player_script")
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
 
 [node name="Camera2D" type="Camera2D" parent="."]
-position = Vector2(0, -8)
+position = Vector2(0, -32)
 
 [node name="SFX" type="AudioStreamPlayer" parent="."]

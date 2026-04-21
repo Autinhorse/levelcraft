@@ -1,10 +1,10 @@
 class_name Star
 extends CharacterBody2D
 
-const SPEED := 80.0
-const GRAVITY := 490.0
-const BOUNCE_VY := -180.0
-const EMERGE_HEIGHT := 8.0
+const SPEED := 320.0
+const GRAVITY := 1960.0
+const BOUNCE_VY := -720.0
+const EMERGE_HEIGHT := 32.0
 const EMERGE_TIME := 0.5
 
 @onready var sprite: Sprite2D = $Sprite2D
@@ -53,12 +53,12 @@ static func _get_texture() -> Texture2D:
 	var path := "res://sprites/tiles/overworld/star.png"
 	if ResourceLoader.exists(path):
 		return load(path) as Texture2D
-	var img := Image.create(14, 14, false, Image.FORMAT_RGBA8)
+	var img := Image.create(56, 56, false, Image.FORMAT_RGBA8)
 	img.fill(Color(1.0, 0.9, 0.2, 1.0))
-	for x in range(14):
+	for x in range(56):
 		img.set_pixel(x, 0, Color.BLACK)
-		img.set_pixel(x, 13, Color.BLACK)
-	for y in range(14):
+		img.set_pixel(x, 55, Color.BLACK)
+	for y in range(56):
 		img.set_pixel(0, y, Color.BLACK)
-		img.set_pixel(13, y, Color.BLACK)
+		img.set_pixel(55, y, Color.BLACK)
 	return ImageTexture.create_from_image(img)

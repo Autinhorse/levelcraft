@@ -1,7 +1,7 @@
 extends Node2D
 
 const DEFAULT_LEVEL := "res://levels/SMB1_World01_01.json"
-const TILE_SIZE := 16
+const TILE_SIZE := 64
 
 @onready var level_root: Node2D = $Level
 @onready var player: CharacterBody2D = $Player
@@ -166,7 +166,7 @@ func enter_pipe(area_index: int, spawn_pos: Vector2) -> void:
 	get_tree().paused = false
 
 func _detect_pipe_at(pos: Vector2) -> String:
-	var check_pos := pos + Vector2(0, -8)
+	var check_pos := pos + Vector2(0, -32)
 	for child in level_root.get_children():
 		if child is Node2D:
 			var child_pos := (child as Node2D).position
@@ -178,13 +178,13 @@ func _detect_pipe_at(pos: Vector2) -> String:
 func _emerge_offset(dir: String) -> Vector2:
 	match dir:
 		"u":
-			return Vector2(8, -16)
+			return Vector2(32, -64)
 		"d":
-			return Vector2(8, 16)
+			return Vector2(32, 64)
 		"l":
-			return Vector2(-16, 0)
+			return Vector2(-64, 0)
 		"r":
-			return Vector2(16, 0)
+			return Vector2(64, 0)
 	return Vector2.ZERO
 
 func end_level() -> void:

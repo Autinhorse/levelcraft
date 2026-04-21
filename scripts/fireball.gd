@@ -1,9 +1,9 @@
 class_name Fireball
 extends CharacterBody2D
 
-const SPEED := 180.0
-const GRAVITY := 600.0
-const BOUNCE_VY := -110.0
+const SPEED := 720.0
+const GRAVITY := 2400.0
+const BOUNCE_VY := -440.0
 const LIFETIME := 2.0
 const SPIN_FRAMES := 4
 const EXPLODE_FRAMES := 3
@@ -42,7 +42,7 @@ func _physics_process(delta: float) -> void:
 		var col := get_slide_collision(i)
 		var other := col.get_collider()
 		if other is Goomba:
-			(other as Goomba).kill(direction * 60.0)
+			(other as Goomba).kill(direction * 240.0)
 			_explode()
 			return
 		elif other is Boss:
@@ -90,12 +90,12 @@ func _add_anim(frames: SpriteFrames, anim_name: String, count: int, fps: float, 
 		frames.add_frame(anim_name, t)
 
 func _placeholder_texture(c: Color) -> ImageTexture:
-	var img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	var img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	for y in range(8):
-		for x in range(8):
-			var dx := float(x) - 3.5
-			var dy := float(y) - 3.5
-			if dx * dx + dy * dy <= 12.25:
+	for y in range(32):
+		for x in range(32):
+			var dx := float(x) - 15.5
+			var dy := float(y) - 15.5
+			if dx * dx + dy * dy <= 196.0:
 				img.set_pixel(x, y, c)
 	return ImageTexture.create_from_image(img)

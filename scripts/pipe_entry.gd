@@ -12,11 +12,11 @@ func _ready() -> void:
 	var rect := RectangleShape2D.new()
 	match direction:
 		"u", "d":
-			rect.size = Vector2(32, 16)
+			rect.size = Vector2(128, 64)
 		"l", "r":
-			rect.size = Vector2(4, 32)
+			rect.size = Vector2(16, 128)
 		_:
-			rect.size = Vector2(16, 16)
+			rect.size = Vector2(64, 64)
 	$CollisionShape2D.shape = rect
 	body_entered.connect(_on_body_entered)
 	body_exited.connect(_on_body_exited)
