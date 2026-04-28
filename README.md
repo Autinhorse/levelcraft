@@ -41,12 +41,47 @@ From today on, I plan to document every step of this project's development—whe
 
 Let's see what kind of miracles AI can bring us in this era.
 
-### 📅 Development Logs
+---
 
-* [**000:** Tools & Tech Stack](./devlogs/en/000.DevEnvironment.md)
-* [**001:** Week 1 - The Birth of LevelCraft](./devlogs/en/001.Week 1 - The Birth of LevelCraft.md)
+### 📖 The Pivot of LevelCraft
+April 28
+
+Yesterday, I posted my plan on Reddit and the Godot forums, and the reception wasn't exactly positive. The general consensus was basically: "Not optimistic, but good luck."
+
+One helpful user even pointed me toward a post-mortem of a failed attempt to 'vibe-code' a Metroidvania game just a few days ago. https://forum.godotengine.org/t/post-mortem-of-my-failed-attempt-to-vibe-code-a-metroidvania-game/137567/19
+
+Today, just as I finished adjusting the art assets and was about to dive into building the "Maker" mechanics, I found myself hesitating.
+
+If 40 years of experience has taught me anything about my biggest flaw, it's that I change my mind very quickly. I've decided to pivot and find a smaller-scale game to test the waters first. I'll invest 2-3 weeks of serious effort into it; that should be enough time to see if this workflow actually yields results or not.
+
+No sooner said than done. I dug up a very old game to use as a reference and got straight to work.
+
+The new project is called Ricochet, which is also an action-based game with distinct levels. The plan is to rely completely on Claude Code AI for coding assistance. The ultimate goal is to deliver the game itself, an integrated level editor, and a fully functional website where users can create, play, and share their levels. The target: get it done in 4 weeks (giving myself a bit of a buffer).
+
+If this doesn't fail, I'll slowly pick up the Super Mario Maker idea again. LevelCraft can then evolve into the backend infrastructure supporting the level editors for both games. Of course, I still have my primary, ongoing project—that remains the real priority. But for the next few weeks, I'm going all-in on Ricochet.
+
+Wish me luck.
+
+---
+
+### 📅 Ricochet Development Logs
+
+* [**001:** Week 1 - The Birth of LevelCraft](./devlogs/en/001.Week%201%20-%20The%20Birth%20of%20LevelCraft.md)
+* [**002:** Day 10 - Cold Water from an Online Friends](./devlogs/en/002.Day%2010%20-%20Cold%20Water%20from%20an%20Online%20Friends.md)
+
 
 *(More updates coming soon...)*
+
+---
+
+### 📅 Super Jumper Maker Development Logs
+
+* [**000:** Tools & Tech Stack](./games/_archive_jump/devlogs/en/000.DevEnvironment.md)
+* [**001:** Week 1 - The Birth of LevelCraft](./games/_archive_jump/devlogs/en/001.Week%201%20-%20The%20Birth%20of%20LevelCraft.md)
+* [**002:** Day 10 - Cold Water from an Online Friends](./games/_archive_jump/devlogs/en/002.Day%2010%20-%20Cold%20Water%20from%20an%20Online%20Friends.md)
+
+
+*(More updates coming later...)*
 
 ---
 © 2026 AI Dream Builder. Built with 🤖 and ❤️.

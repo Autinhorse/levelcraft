@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://q075ydxsk5g5"
+path="res://.godot/imported/Above Ground BGM.mp3-3533995b1624efde279815dd1c5ec82f.mp3str"
+
+[deps]
+
+source_file="res://games/_archive_jump/Sound/Above Ground BGM.mp3"
+dest_files=["res://.godot/imported/Above Ground BGM.mp3-3533995b1624efde279815dd1c5ec82f.mp3str"]
+
+[params]
+
+loop=true
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

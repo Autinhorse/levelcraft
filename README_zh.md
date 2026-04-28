@@ -41,15 +41,48 @@
 
 让我们一起看看，在这个时代，AI 到底能给我们带来怎样的奇迹。
 
+---------------------------------------------------------------------
+
+### 📖  LevelCraft的变身：
+
+4月28日
+
+昨天在reddit和Godot贴出我的计划，结果没收到正面反馈。大体就是：不看好，祝好运。
+
+甚至有热心网友专门给我推送了一个几天前刚发出的帖子——一位开发者用 AI 辅助 Godot 开发银河恶魔城游戏彻底失败的复盘。https://forum.godotengine.org/t/post-mortem-of-my-failed-attempt-to-vibe-code-a-metroidvania-game/137567/19
+
+今天刚好调整完了美术素材，正准备开始Maker的制作，也有些犹豫了。
+
+40来年的经验，我的最大的缺点就是主意变得快。 决定找一个规模小的游戏先踩踩坑，投2-3周的时间认真做做，行与不行应该也能看个结果了。
+
+说做就做，找了一个很老的游戏做参考，动手搞起来。
+
+新项目的名字叫：Ricochet，也是一个动作型的有关卡的游戏。计划依靠Claude Code AI的辅助编码，目标实现游戏本身，关卡编辑器，还有一个带用户功能的网站，可以让大家在上面编辑关卡并互相分享。目标：4周搞定（给自己一点Buffer）
+
+如果这个没有失败，可以慢慢把Super Mario Maker再搞起来。LevelCraft成为两个不同游戏关卡编辑的支撑。 当然还有我一直在做的项目，那个才是重点。不过后面几周先搞Ricochet。 希望好运。
+
 ---
 
-### 📅 开发日志连载
+### 📅 Ricochet 开发日志连载
 
-* [**000:** 使用的工具](./devlogs/zh/000.开发环境.md)
 * [**001:** Week 1 - LevelCraft 的诞生](./devlogs/zh/001.Week%201%20-%20LevelCraft%20的诞生.md)
 * [**002:** Day 10 - 网友的冷水](./devlogs/zh/002.Day%2010%20-%20网友的冷水.md )
 
 *(内容持续更新中...)*
+
+---
+
+* [**001:** Day 1 - Ricochet 开始3个小时 ](./games/_archive_jump/devlogs/zh/001.Week%201%20-%20LevelCraft%20的诞生.md)
+
+---
+
+### 📅 Super Jumper Maker 开发日志连载
+
+* [**000:** 使用的工具](./games/_archive_jump/devlogs/zh/000.开发环境.md)
+* [**001:** Week 1 - LevelCraft 的诞生](./games/_archive_jump/devlogs/zh/001.Week%201%20-%20LevelCraft%20的诞生.md)
+* [**002:** Day 10 - 网友的冷水](./games/_archive_jump/devlogs/zh/002.Day%2010%20-%20网友的冷水.md )
+
+*(内容暂时断更...)*
 
 ---
 © 2026 AI Dream Builder. 用 🤖 和 ❤️ 构建。
