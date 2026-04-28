@@ -22,7 +22,6 @@ var _bg_cam_min: float = 0.0
 var _bg_cam_range: float = 1.0
 var _bg_max_offset: float = 0.0
 
-var current_json_path: String = ""
 var current_map_style: int = 0
 var current_areas: Array = []
 
@@ -38,33 +37,28 @@ func _process(_delta: float) -> void:
 
 func _ready() -> void:
 	print("[main] _ready BEGIN")
-	var path: String = GameState.selected_level_json
-	if path.is_empty():
-		path = DEFAULT_LEVEL
-	print("[main] _ready load_level: ", path)
+	# If no level data was preset (level_select / editor), fall back to default.
+	if GameState.current_level_data.is_empty():
+		var data := LevelRenderer.load_level_json(DEFAULT_LEVEL)
+		if data.is_empty():
+			return
+		GameState.current_level_data = data
+		GameState.current_level_source = DEFAULT_LEVEL
+	print("[main] _ready level source: ", GameState.current_level_source)
 	if GameState.spawn_override:
 		player.position = GameState.spawn_position
 		GameState.spawn_override = false
-	_load_level(path)
+	_setup_level()
 
-func _load_level(json_path: String) -> void:
-	var file := FileAccess.open(json_path, FileAccess.READ)
-	if file == null:
-		push_error("Cannot open level: %s" % json_path)
-		return
-	var parsed = JSON.parse_string(file.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_error("Invalid level JSON: %s" % json_path)
-		return
-	var data: Dictionary = parsed
+func _setup_level() -> void:
+	var data: Dictionary = GameState.current_level_data
+	var src: String = GameState.current_level_source
 	current_areas = data.get("areas", [])
 	if current_areas.is_empty():
-		print("No areas in %s" % json_path)
+		print("No areas in level: %s" % src)
 		return
 
-	current_json_path = json_path
-
-	var use_checkpoint := (GameState.checkpoint_json_path == json_path
+	var use_checkpoint := (GameState.checkpoint_json_path == src
 			and GameState.checkpoint_area_index >= 0
 			and GameState.checkpoint_area_index < current_areas.size())
 	var start_area := GameState.checkpoint_area_index if use_checkpoint else 0
@@ -91,15 +85,16 @@ func _load_area(index: int) -> void:
 	var area: Dictionary = current_areas[index]
 	var map_style: int = int(area.get("map_style", 0))
 	var bg_name: String = str(area.get("background", ""))
-	print("[main] load area index=", index, " json=", current_json_path, " style=", map_style)
+	print("[main] load area index=", index, " style=", map_style)
 	_render_area(map_style, index, bg_name)
 
 func _render_area(map_style: int, area_index: int, bg_name: String) -> void:
 	current_map_style = map_style
 	for child in level_root.get_children():
 		child.queue_free()
-	var grid_size: Vector2i = LevelRenderer.render_level_v2(level_root, current_json_path, area_index)
-	print("[main] render_level_v2 grid_size=", grid_size, " children=", level_root.get_child_count())
+	var grid_size: Vector2i = LevelRenderer.render_area_from_data(
+			level_root, GameState.current_level_data, area_index, GameState.current_level_source)
+	print("[main] render grid_size=", grid_size, " children=", level_root.get_child_count())
 	_apply_camera_limits(grid_size)
 	_setup_background(bg_name, map_style, grid_size)
 

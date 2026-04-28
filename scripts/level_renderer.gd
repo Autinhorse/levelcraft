@@ -25,28 +25,34 @@ static func has_spawn_position() -> bool:
 # Loader: unified JSON format with terrain grid + entity list.
 # JSON shape: { version, name, music, areas: [ { id, map_style, background,
 # size: {cols,rows}, spawn: {col,row}, terrain: int[][], entities: [...] } ] }
+#
+# load_level_json(path)  → file IO only, returns parsed Dictionary (or {})
+# render_area_from_data(parent, data, area_index, source_id) → pure render;
+#   source_id is an opaque string used as a consume/checkpoint key (file path,
+#   "editor:...", etc.). Game scene neither knows nor cares where data came from.
 # ============================================================
 
-static func render_level_v2(parent: Node, json_path: String, area_index: int = 0) -> Vector2i:
+static func load_level_json(path: String) -> Dictionary:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		push_error("[lr] Cannot open: %s" % path)
+		return {}
+	var parsed = JSON.parse_string(f.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_error("[lr] Bad JSON: %s" % path)
+		return {}
+	return parsed
+
+static func render_area_from_data(parent: Node, level_data: Dictionary, area_index: int, source_id: String) -> Vector2i:
 	_ensure_configs()
-	# Use composite path so consume tracking is per-area within one JSON file.
-	_current_csv_path = "%s#%d" % [json_path, area_index]
+	# Composite key so consume tracking is per-area within one source.
+	_current_csv_path = "%s#%d" % [source_id, area_index]
 	_current_area_index = area_index
 	_has_spawn = false
 	_current_spawn = Vector2.ZERO
 	_bridge_map.clear()
 
-	var f := FileAccess.open(json_path, FileAccess.READ)
-	if f == null:
-		push_error("[lr] Cannot open: %s" % json_path)
-		return Vector2i.ZERO
-	var parsed = JSON.parse_string(f.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_error("[lr] Bad JSON: %s" % json_path)
-		return Vector2i.ZERO
-	var data: Dictionary = parsed
-
-	var areas: Array = data.get("areas", [])
+	var areas: Array = level_data.get("areas", [])
 	if area_index < 0 or area_index >= areas.size():
 		push_error("[lr] area_index %d out of range (areas=%d)" % [area_index, areas.size()])
 		return Vector2i.ZERO
@@ -93,7 +99,7 @@ static func render_level_v2(parent: Node, json_path: String, area_index: int = 0
 		if str(e.get("type", "")) == "pipe":
 			_populate_pipe_grid_cells(e)
 
-	print("[lr] render_level_v2 path=", json_path, " area=", area_index, " size=", cols, "x", rows, " entities=", entities.size())
+	print("[lr] render_area_from_data source=", source_id, " area=", area_index, " size=", cols, "x", rows, " entities=", entities.size())
 
 	# Render terrain. JSON numbers parse as float, so int() first to drop ".0".
 	for r in range(mini(rows, terrain.size())):
@@ -239,7 +245,7 @@ static func _spawn_pipe_entity(parent: Node, e: Dictionary, map_style: int) -> v
 
 	# Spawn each bbox cell. Anchor renders 2x2 visual (size:2 in tile_visuals);
 	# fillers skip their per-cell visual via _is_pipe_filler_covered (the grid
-	# was pre-populated in render_level_v2). Body cells beyond the 2x2 anchor
+	# was pre-populated in render_area_from_data). Body cells beyond the 2x2 anchor
 	# render their per-cell sprite normally.
 	for dr in range(bbox_h):
 		for dc in range(bbox_w):

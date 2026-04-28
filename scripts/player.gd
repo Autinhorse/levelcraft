@@ -101,17 +101,32 @@ func _physics_process(delta: float) -> void:
 			velocity.x = 0.0
 
 	_update_animation()
+
+	# Jump corner correction: when rising and head barely clips a block edge,
+	# nudge horizontally so we slip past instead of getting wedged.
+	if velocity.y < 0.0 and not is_on_floor():
+		_apply_jump_corner_correction()
+
 	move_and_slide()
 
 	if position.y > FALL_DEATH_Y:
 		die()
 		return
 
-	# Prefer a center-aligned head bump: if a Q/B block sits directly above the
-	# player's head center, only that block is hit; corner-side block hits in
-	# the slide loop are filtered out below. If center probe finds nothing,
-	# corner-based slide collisions are used as the fallback (legacy behavior).
+	# Pick the single block above the head's biased centerline. Player width is
+	# even, so the centerline lands on one of two middle pixels — bias by ±1px
+	# in the facing direction so a tie at a boundary resolves deterministically.
 	var head_bump_target: Node = _probe_head_center()
+
+	# Fire bump on the probe's block (if any) when slide reports a ceiling hit.
+	# Don't depend on slide collisions for which block — physics' max_slides
+	# only reports one of two side-by-side blocks, which is non-deterministic.
+	if is_on_ceiling() and head_bump_target != null:
+		if head_bump_target is QuestionBlock:
+			(head_bump_target as QuestionBlock).hit(self)
+		elif head_bump_target is BrickBlock:
+			(head_bump_target as BrickBlock).hit(self)
+
 
 	for i in get_slide_collision_count():
 		var col := get_slide_collision(i)
@@ -157,12 +172,8 @@ func _physics_process(delta: float) -> void:
 		elif other is Boss:
 			take_damage()
 			return
-		elif other is QuestionBlock:
-			if col.get_normal().y > 0.7 and (head_bump_target == null or head_bump_target == other):
-				(other as QuestionBlock).hit(self)
-		elif other is BrickBlock:
-			if col.get_normal().y > 0.7 and (head_bump_target == null or head_bump_target == other):
-				(other as BrickBlock).hit(self)
+		# Block bumps are handled above via head_bump_target probe; slide loop
+		# only handles enemies and other non-block colliders.
 
 func _process_death(delta: float) -> void:
 	velocity.y += GRAVITY * delta
@@ -316,24 +327,66 @@ func _exit_crouch() -> void:
 
 # Returns the QuestionBlock or BrickBlock sitting directly above the player's
 # head center, or null if nothing is there.
+const CORNER_CORRECTION_MAX := 12
+
+# Pick the QB/BB to bump when the player is blocked from above.
+# Probe positions, in priority order:
+#   1. head centerline, biased ±1px in facing direction (resolves boundary ties)
+#   2. corner on the facing side
+#   3. corner on the opposite side
+# First QB/BB found wins. Non-triggerable bodies (terrain stone, fixed blocks
+# rendered as raw StaticBody2D) are skipped — physics still blocks the player
+# but no bump fires.
 func _probe_head_center() -> Node:
 	if collision.shape == null or not (collision.shape is RectangleShape2D):
 		return null
 	var shape_size: Vector2 = (collision.shape as RectangleShape2D).size
 	var head_local_y := -shape_size.y
+	var bias_x: float = -1.0 if sprite.flip_h else 1.0
+	var corner_x := shape_size.x / 2.0 - 1.0
+	var x_offsets: Array
+	if sprite.flip_h:
+		x_offsets = [bias_x, -corner_x, corner_x]
+	else:
+		x_offsets = [bias_x, corner_x, -corner_x]
+
 	var probe := RectangleShape2D.new()
-	probe.size = Vector2(8.0, 4.0)
+	probe.size = Vector2(1.0, 4.0)
 	var params := PhysicsShapeQueryParameters2D.new()
 	params.shape = probe
-	params.transform = Transform2D(0.0, global_position + Vector2(0.0, head_local_y - 2.0))
 	params.collision_mask = 1
 	params.exclude = [self]
+
 	var space := get_world_2d().direct_space_state
-	for r in space.intersect_shape(params, 4):
-		var c = r.get("collider", null)
-		if c is QuestionBlock or c is BrickBlock:
-			return c
+	for ox in x_offsets:
+		params.transform = Transform2D(0.0, global_position + Vector2(ox, head_local_y - 2.0))
+		for r in space.intersect_shape(params, 4):
+			var c = r.get("collider", null)
+			if c is QuestionBlock or c is BrickBlock:
+				return c
 	return null
+
+func _apply_jump_corner_correction() -> void:
+	if collision.shape == null or not (collision.shape is RectangleShape2D):
+		return
+	var space := get_world_2d().direct_space_state
+	var params := PhysicsShapeQueryParameters2D.new()
+	params.shape = collision.shape
+	params.collision_mask = 1
+	params.exclude = [self]
+
+	# If a 1px upward sweep is clear, nothing to correct.
+	params.transform = Transform2D(0.0, collision.global_position + Vector2(0, -1))
+	if space.intersect_shape(params, 1).is_empty():
+		return
+
+	# Try increasing lateral nudges; first clear position wins.
+	for nudge in [4, 8, CORNER_CORRECTION_MAX]:
+		for sign in [-1, 1]:
+			params.transform = Transform2D(0.0, collision.global_position + Vector2(sign * nudge, -1))
+			if space.intersect_shape(params, 1).is_empty():
+				position.x += sign * nudge
+				return
 
 func _play_sfx(sound_name: String) -> void:
 	var path := "res://Sound/" + sound_name

@@ -1,7 +1,14 @@
 extends Node
 
 var art_style: String = "sci"
-var selected_level_json: String = ""
+
+# Level the game scene will play. Set by level_select / editor / fallback.
+# `current_level_data` is the parsed JSON; `current_level_source` is an
+# opaque string ID used as a consume/checkpoint key (file path or "editor:..").
+var current_level_data: Dictionary = {}
+var current_level_source: String = ""
+var is_editor_play: bool = false
+
 var spawn_override: bool = false
 var spawn_position: Vector2 = Vector2.ZERO
 var coin_count: int = 0
@@ -26,3 +33,6 @@ func clear_session_state() -> void:
 	consumed.clear()
 	clear_checkpoint()
 	coin_count = 0
+	current_level_data = {}
+	current_level_source = ""
+	is_editor_play = false

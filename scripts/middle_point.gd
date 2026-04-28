@@ -28,7 +28,7 @@ func _on_body_entered(body: Node) -> void:
 	set_deferred("monitoring", false)
 
 	GameState.mark_consumed(csv_path, col, row)
-	GameState.checkpoint_json_path = GameState.selected_level_json
+	GameState.checkpoint_json_path = GameState.current_level_source
 	GameState.checkpoint_area_index = area_index
 	GameState.checkpoint_position = position
 
