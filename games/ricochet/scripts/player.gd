@@ -334,12 +334,21 @@ func _update_collision_shape() -> void:
 		_collision_rect.size = target
 
 func _hit_hazard() -> bool:
+	# Walks the most recent slide collisions: triggers glass walls as a
+	# side-effect, returns true (and fires _die) if a hazard was hit.
+	var hit := false
 	for i in get_slide_collision_count():
 		var col := get_slide_collision(i)
 		var other := col.get_collider()
-		if other != null and other.has_meta("is_hazard"):
-			_die()
-			return true
+		if other == null:
+			continue
+		if other.has_meta("is_hazard"):
+			hit = true
+		elif other is GlassWall:
+			(other as GlassWall).trigger()
+	if hit:
+		_die()
+		return true
 	return false
 
 func _die() -> void:
