@@ -11,13 +11,13 @@ config_version=5
 [application]
 
 config/name="LevelCraft Ricochet"
-run/main_scene="res://scenes/play/play.tscn"
+run/main_scene="res://scenes/editor/editor.tscn"
 config/features=PackedStringArray("4.6")
 config/icon="res://icon.svg"
 
 [display]
 
-window/size/viewport_width=1200
+window/size/viewport_width=1600
 window/size/viewport_height=960
 
 [rendering]
