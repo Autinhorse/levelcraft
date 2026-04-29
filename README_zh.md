@@ -67,7 +67,7 @@
 
 * [**000:** 我的“AI 研发团队”与技术栈 ](./games/ricochet/devlogs/zh/000.%20我的“AI%20研发团队”与技术栈.md)
 * [**001:** Day 1 - Ricochet 开始3个小时 ](./games/ricochet/devlogs/zh/001.Day%201%20-%20Ricochet%20开始3个小时.md)
-
+* [**001:** Day 2 - 今天的进展不错 ](./games/ricochet/devlogs/zh/002.Day%202%20-%20今天的进展不错.md)
 *(内容持续更新中...)*
 ---
 
@@ -75,7 +75,7 @@
 我本来一直和Claude聊天是用中文的。对于这个项目，开始努力使用英文。并且会把每天通过VS Code CLI和Claude Code聊天的记录完整贴出来，万一谁有兴趣可以看看这个软件是怎么样一步一步走到这里的。
 
 [Conversation 0428: 聊天记录 ](./games/ricochet/devlogs/conversation%20with%20claude%202026-04028.JSONL)
-
+[Conversation 0429: 聊天记录 ](./games/ricochet/devlogs/conversation%20with%20claude%202026-04029.JSONL)
 
 
 ### 📅 Super Jumper Maker 开发日志连载
