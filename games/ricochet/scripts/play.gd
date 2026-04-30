@@ -17,7 +17,21 @@ const COLOR_COIN := Color(1.00, 0.85, 0.20, 1.0)
 const COLOR_SPIKE := Color(0.85, 0.25, 0.25, 1.0)
 const COLOR_SPIKE_PLATE := Color(0.45, 0.46, 0.50, 1.0)  # matches wall: backplate is a wall
 const COLOR_GLASS := Color(0.55, 0.85, 1.00, 0.7)
+const COLOR_CANNON := Color(0.30, 0.30, 0.32, 1.0)
+const COLOR_CANNON_BARREL := Color(0.55, 0.55, 0.60, 1.0)
+const COLOR_CONVEYOR := Color(0.40, 0.45, 0.55, 1.0)
 const COLOR_BG := Color(0.13, 0.14, 0.17, 1.0)
+
+# Six maximally-distinct key/key-wall colors — must mirror editor.gd's
+# KEY_COLORS table so editor preview and runtime appearance match.
+const KEY_COLORS := [
+	Color(0.95, 0.30, 0.30, 1.0),  # 0 red
+	Color(0.95, 0.60, 0.20, 1.0),  # 1 orange
+	Color(0.95, 0.90, 0.20, 1.0),  # 2 yellow
+	Color(0.30, 0.85, 0.35, 1.0),  # 3 green
+	Color(0.20, 0.75, 0.95, 1.0),  # 4 cyan
+	Color(0.70, 0.40, 0.95, 1.0),  # 5 purple
+]
 
 var level: Dictionary = {}
 var current_page_index: int = 0
@@ -69,6 +83,11 @@ func _build_current_page() -> void:
 	_build_teleports(page)
 	_build_spikes(page)
 	_build_glass_walls(page)
+	_build_cannons(page)
+	_build_conveyors(page)
+	_build_spike_blocks(page)
+	_build_key_walls(page)
+	_build_keys(page)
 	var spawn_pos := _cell_center(int(page.spawn.x), int(page.spawn.y))
 	_spawn_player(spawn_pos)
 
@@ -285,9 +304,16 @@ func _make_glass_wall(col: int, row: int, delay: float) -> void:
 	body.break_delay = delay
 	body.grid_pos = Vector2i(col, row)
 
+	# Collision shape is inset 2px on each side (44×44 inside the 48×48
+	# visual). The full-size box used to share its top edge exactly with
+	# adjacent floor bodies (e.g. a conveyor's top), and the shared seam
+	# would catch the player as they slid across — they'd stutter to a halt
+	# directly above the glass instead of gliding onto it. The player's
+	# IDLE shape is 46×46, so they still overlap the 44×44 glass collider
+	# when standing on the cell, and trigger() still fires.
 	var shape := CollisionShape2D.new()
 	var rect := RectangleShape2D.new()
-	rect.size = Vector2(TILE_SIZE, TILE_SIZE)
+	rect.size = Vector2(TILE_SIZE - 4.0, TILE_SIZE - 4.0)
 	shape.shape = rect
 	body.add_child(shape)
 
@@ -299,6 +325,229 @@ func _make_glass_wall(col: int, row: int, delay: float) -> void:
 	body.visual = visual
 
 	page_root.add_child(body)
+
+
+func _build_cannons(page: Dictionary) -> void:
+	if not page.has("cannons"):
+		return
+	for cn in (page.cannons as Array):
+		var period := 2.0
+		var bullet_speed := 8.0
+		if cn.has("period"):
+			period = float(cn.period)
+		if cn.has("bullet_speed"):
+			bullet_speed = float(cn.bullet_speed)
+		_make_cannon(int(cn.x), int(cn.y), String(cn.dir), period, bullet_speed)
+
+
+# Builds a Cannon at (col, row): full-cell StaticBody2D on layer 1 (blocks
+# the player) plus a barrel rect indicating the firing direction. The
+# Cannon script handles its own firing timer and bullet spawning.
+func _make_cannon(col: int, row: int, dir: String, period: float, bullet_speed: float) -> void:
+	var cannon := Cannon.new()
+	cannon.position = _cell_center(col, row)
+	cannon.collision_layer = 1
+	cannon.dir = dir
+	cannon.period = period
+	cannon.bullet_speed_tiles = bullet_speed
+
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(TILE_SIZE, TILE_SIZE)
+	shape.shape = rect
+	cannon.add_child(shape)
+
+	var body_visual := ColorRect.new()
+	body_visual.position = Vector2(-TILE_SIZE / 2.0, -TILE_SIZE / 2.0)
+	body_visual.size = Vector2(TILE_SIZE, TILE_SIZE)
+	body_visual.color = COLOR_CANNON
+	cannon.add_child(body_visual)
+
+	# Barrel rect — a half-cell protrusion in the firing direction. Position
+	# is relative to the cannon's center (since the StaticBody2D sits at the
+	# cell center); origin (-TILE_SIZE/2, -TILE_SIZE/2) is the cell's top-left.
+	var ts := TILE_SIZE
+	var barrel_rect: Rect2
+	match dir:
+		"up":    barrel_rect = Rect2(0.35 * ts, 0.0,        0.3 * ts, 0.5 * ts)
+		"down":  barrel_rect = Rect2(0.35 * ts, 0.5 * ts,   0.3 * ts, 0.5 * ts)
+		"left":  barrel_rect = Rect2(0.0,       0.35 * ts,  0.5 * ts, 0.3 * ts)
+		"right": barrel_rect = Rect2(0.5 * ts,  0.35 * ts,  0.5 * ts, 0.3 * ts)
+		_:       barrel_rect = Rect2(0.35 * ts, 0.0,        0.3 * ts, 0.5 * ts)
+
+	var barrel := ColorRect.new()
+	barrel.position = Vector2(-ts / 2.0, -ts / 2.0) + barrel_rect.position
+	barrel.size = barrel_rect.size
+	barrel.color = COLOR_CANNON_BARREL
+	cannon.add_child(barrel)
+
+	page_root.add_child(cannon)
+
+
+func _build_conveyors(page: Dictionary) -> void:
+	if not page.has("conveyors"):
+		return
+	for cv in (page.conveyors as Array):
+		_make_conveyor(int(cv.x), int(cv.y), String(cv.dir))
+
+
+# Conveyor tile: a wall-like StaticBody2D (collision_layer 1) that carries
+# a "conveyor_dir" meta read by Player._floor_conveyor_dir() while in IDLE.
+# +1 = top surface moves right (cw); -1 = moves left (ccw).
+func _make_conveyor(col: int, row: int, dir: String) -> void:
+	var body := StaticBody2D.new()
+	body.position = _cell_center(col, row)
+	body.collision_layer = 1
+	body.set_meta("conveyor_dir", 1 if dir == "cw" else -1)
+
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(TILE_SIZE, TILE_SIZE)
+	shape.shape = rect
+	body.add_child(shape)
+
+	var visual := ColorRect.new()
+	visual.position = Vector2(-TILE_SIZE / 2.0, -TILE_SIZE / 2.0)
+	visual.size = Vector2(TILE_SIZE, TILE_SIZE)
+	visual.color = COLOR_CONVEYOR
+	body.add_child(visual)
+
+	var arrow := Label.new()
+	arrow.text = "→" if dir == "cw" else "←"
+	arrow.position = Vector2(-TILE_SIZE / 2.0, -TILE_SIZE / 2.0)
+	arrow.size = Vector2(TILE_SIZE, TILE_SIZE)
+	arrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	arrow.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	arrow.add_theme_color_override("font_color", Color.WHITE)
+	body.add_child(arrow)
+
+	page_root.add_child(body)
+
+
+func _build_spike_blocks(page: Dictionary) -> void:
+	if not page.has("spike_blocks"):
+		return
+	for sb in (page.spike_blocks as Array):
+		_make_spike_block(int(sb.x), int(sb.y))
+
+
+# Spike-block tile: full-cell StaticBody2D on layer 1 (blocks the player
+# like a wall) tagged is_hazard so any contact kills via _hit_hazard. The
+# directional spike splits its cell into a plate (safe, wall) and a spike
+# rect (lethal); the spike block is lethal across the entire cell, so it
+# uses one body for the whole tile.
+func _make_spike_block(col: int, row: int) -> void:
+	var body := StaticBody2D.new()
+	body.position = _cell_center(col, row)
+	body.collision_layer = 1
+	body.set_meta("is_hazard", true)
+
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(TILE_SIZE, TILE_SIZE)
+	shape.shape = rect
+	body.add_child(shape)
+
+	var visual := ColorRect.new()
+	visual.position = Vector2(-TILE_SIZE / 2.0, -TILE_SIZE / 2.0)
+	visual.size = Vector2(TILE_SIZE, TILE_SIZE)
+	visual.color = COLOR_SPIKE
+	body.add_child(visual)
+
+	var plate_size := TILE_SIZE / 3.0
+	var plate := ColorRect.new()
+	plate.position = Vector2(-plate_size * 0.5, -plate_size * 0.5)
+	plate.size = Vector2(plate_size, plate_size)
+	plate.color = COLOR_SPIKE_PLATE
+	body.add_child(plate)
+
+	page_root.add_child(body)
+
+
+func _build_key_walls(page: Dictionary) -> void:
+	if not page.has("key_walls"):
+		return
+	for kw in (page.key_walls as Array):
+		_make_key_wall(int(kw.x), int(kw.y), int(kw.color))
+
+
+func _build_keys(page: Dictionary) -> void:
+	if not page.has("keys"):
+		return
+	for k in (page.keys as Array):
+		_make_key(int(k.x), int(k.y), int(k.color))
+
+
+# Key-wall: behaves identically to a normal wall (StaticBody2D on layer 1)
+# until the player picks up the matching key. Tagged with key_color so
+# _on_key_entered can find and free every wall sharing the picked-up key.
+func _make_key_wall(col: int, row: int, color_idx: int) -> void:
+	var body := StaticBody2D.new()
+	body.position = _cell_center(col, row)
+	body.collision_layer = 1
+	body.set_meta("key_color", color_idx)
+
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(TILE_SIZE, TILE_SIZE)
+	shape.shape = rect
+	body.add_child(shape)
+
+	var visual := ColorRect.new()
+	visual.position = Vector2(-TILE_SIZE / 2.0, -TILE_SIZE / 2.0)
+	visual.size = Vector2(TILE_SIZE, TILE_SIZE)
+	visual.color = KEY_COLORS[color_idx].darkened(0.3)
+	body.add_child(visual)
+
+	page_root.add_child(body)
+
+
+# Key: an Area2D (no collision_layer; player passes through it) that
+# detects the player and frees itself plus every page-root child whose
+# key_color meta matches. The key itself also carries the meta so the
+# cascade also picks up duplicate keys if any (defensive — placement flow
+# already enforces one key per color, but JSON could be hand-edited).
+func _make_key(col: int, row: int, color_idx: int) -> void:
+	var area := Area2D.new()
+	area.position = _cell_center(col, row)
+	area.collision_layer = 0
+	area.collision_mask = 2  # detects the player
+	area.set_meta("key_color", color_idx)
+
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(TILE_SIZE, TILE_SIZE)
+	shape.shape = rect
+	area.add_child(shape)
+
+	var visual := ColorRect.new()
+	visual.position = Vector2(-TILE_SIZE / 2.0, -TILE_SIZE / 2.0)
+	visual.size = Vector2(TILE_SIZE, TILE_SIZE)
+	visual.color = KEY_COLORS[color_idx]
+	area.add_child(visual)
+
+	var label := Label.new()
+	label.text = "K"
+	label.position = Vector2(-TILE_SIZE / 2.0, -TILE_SIZE / 2.0)
+	label.size = Vector2(TILE_SIZE, TILE_SIZE)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", Color.BLACK)
+	area.add_child(label)
+
+	area.body_entered.connect(_on_key_entered.bind(area, color_idx))
+	page_root.add_child(area)
+
+
+func _on_key_entered(_body: Node, key: Area2D, color_idx: int) -> void:
+	# Free the picked-up key plus every wall (and any duplicate keys) of
+	# the same color on this page. queue_free is deferred so the iteration
+	# itself is safe even though we're freeing nodes mid-loop.
+	if not is_instance_valid(key):
+		return
+	for child in page_root.get_children():
+		if child.has_meta("key_color") and int(child.get_meta("key_color")) == color_idx:
+			child.queue_free()
 
 
 func _make_spike_part(top_left: Vector2, size: Vector2, color: Color, is_hazard: bool) -> void:

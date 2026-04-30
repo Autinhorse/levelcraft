@@ -22,6 +22,7 @@ const _SHAPE_VMOVE := Vector2(TILE_SIZE - 4.0, TILE_SIZE - 2.0)  # 44 × 46 — 
 @export var terminal_velocity_tiles: float = 5.0   # fall speed cap
 @export var jump_height_tiles: float = 2.0         # Space-jump peak above floor
 @export var rebound_distance_tiles: float = 1.0
+@export var conveyor_speed_tiles: float = 4.0      # horizontal push while standing on a conveyor
 @export var pause_time: float = 0.1                # seconds at apex / after rebound, before falling
 @export var death_pause: float = 0.5               # seconds dead before respawn
 
@@ -31,6 +32,7 @@ var gravity: float
 var terminal_velocity: float
 var jump_height: float
 var rebound_distance: float
+var conveyor_speed: float
 # Initial up-velocity to reach jump_height under gravity: v = sqrt(2*g*h).
 var jump_initial_velocity: float
 
@@ -66,6 +68,7 @@ func _ready() -> void:
 	terminal_velocity = terminal_velocity_tiles * TILE_SIZE
 	jump_height = jump_height_tiles * TILE_SIZE
 	rebound_distance = rebound_distance_tiles * TILE_SIZE
+	conveyor_speed = conveyor_speed_tiles * TILE_SIZE
 	jump_initial_velocity = sqrt(2.0 * gravity * jump_height)
 
 	# Grab the player's RectangleShape2D so we can resize it per state.
@@ -116,10 +119,19 @@ func _physics_process(delta: float) -> void:
 		State.DEAD:          _dead(delta)
 
 func _idle(_delta: float) -> void:
-	velocity = Vector2.ZERO
+	# Conveyor under the player (read from the previous frame's slide
+	# collisions) drives a horizontal push. Returns 0 on a non-conveyor floor,
+	# in which case velocity is zero and the player just stands still.
+	var conv := _floor_conveyor_dir()
+	velocity = Vector2(float(conv) * conveyor_speed, 0.0)
 	move_and_slide()
+	# Hazards can now collide with the player while in IDLE because the
+	# conveyor can push them into one (or a bullet can fly into them).
+	if _hit_hazard():
+		return
 	if not is_on_floor():
-		# Floor disappeared (e.g., destructible later) — fall.
+		# Floor disappeared (rode off the conveyor edge, or destructible
+		# later) — fall.
 		state = State.FALLING
 		return
 
@@ -333,9 +345,38 @@ func _update_collision_shape() -> void:
 	if _collision_rect.size != target:
 		_collision_rect.size = target
 
+# Walks the most recent slide collisions for one whose normal points up
+# (the player is standing on it) and which carries a "conveyor_dir" meta.
+# Returns the meta value (+1 right / -1 left), or 0 for non-conveyor floors.
+# Reads the previous physics frame's collisions, which is fine: the conveyor
+# push lags by one frame at most, invisible at 60fps.
+func _floor_conveyor_dir() -> int:
+	for i in get_slide_collision_count():
+		var col := get_slide_collision(i)
+		var n := col.get_normal()
+		if n.y < -0.5:  # surface beneath the player (normal points up)
+			var body := col.get_collider()
+			if body != null and body.has_meta("conveyor_dir"):
+				return int(body.get_meta("conveyor_dir"))
+	return 0
+
+
 func _hit_hazard() -> bool:
 	# Walks the most recent slide collisions: triggers glass walls as a
 	# side-effect, returns true (and fires _die) if a hazard was hit.
+	#
+	# Conveyor straddling: while the player is in IDLE and any part of
+	# their body still sits over a conveyor cell, defer all hazard and
+	# glass processing — they have not yet fully exited the belt, and the
+	# spec is that the next cell only gets evaluated *after* the player
+	# has cleared the final conveyor tile. We can't rely on slide
+	# collisions for this: when the player glides horizontally across the
+	# boundary between two adjacent floor bodies, move_and_slide does not
+	# reliably keep both bodies in slide_collisions, so checking the
+	# slide-collision list alone misses the straddle.
+	if state == State.IDLE and _is_over_conveyor():
+		return false
+
 	var hit := false
 	for i in get_slide_collision_count():
 		var col := get_slide_collision(i)
@@ -351,7 +392,48 @@ func _hit_hazard() -> bool:
 		return true
 	return false
 
+
+# Probes three points just below the player's body (near left edge,
+# center, near right edge) and returns true if any is inside a wall-layer
+# body with the conveyor_dir meta. Used to defer next-cell evaluation
+# while the player straddles the end of a belt — the slide_collisions
+# list isn't a reliable signal for that during horizontal motion.
+func _is_over_conveyor() -> bool:
+	if _collision_rect == null:
+		return false
+	var space_state := get_world_2d().direct_space_state
+	if space_state == null:
+		return false
+	var query := PhysicsPointQueryParameters2D.new()
+	query.collide_with_bodies = true
+	query.collision_mask = 1
+	var half_w: float = _collision_rect.size.x * 0.5
+	var half_h: float = _collision_rect.size.y * 0.5
+	var probe_y: float = position.y + half_h + 2.0
+	var inset: float = 1.0
+	var probe_xs: Array = [
+		position.x - half_w + inset,
+		position.x,
+		position.x + half_w - inset,
+	]
+	for x in probe_xs:
+		query.position = Vector2(x, probe_y)
+		var hits: Array = space_state.intersect_point(query, 4)
+		for hit in hits:
+			var collider: Object = hit.get("collider")
+			if collider != null and collider.has_meta("conveyor_dir"):
+				return true
+	return false
+
 func _die() -> void:
 	velocity = Vector2.ZERO
 	pause_timer = death_pause
 	state = State.DEAD
+
+
+# Public kill hook for external hazards (e.g. Bullet via body_entered).
+# No-ops if already dead so concurrent hits don't restart the death timer.
+func die() -> void:
+	if state == State.DEAD:
+		return
+	_die()

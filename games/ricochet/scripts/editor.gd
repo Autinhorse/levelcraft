@@ -27,10 +27,13 @@ const COLOR_COIN := Color(1.00, 0.85, 0.20, 1.0)
 const COLOR_SPIKE := Color(0.85, 0.25, 0.25, 1.0)
 const COLOR_SPIKE_PLATE := Color(0.45, 0.46, 0.50, 1.0)  # matches wall: backplate IS a wall
 const COLOR_GLASS := Color(0.55, 0.85, 1.00, 0.7)
+const COLOR_CANNON := Color(0.30, 0.30, 0.32, 1.0)
+const COLOR_CANNON_BARREL := Color(0.55, 0.55, 0.60, 1.0)
+const COLOR_CONVEYOR := Color(0.40, 0.45, 0.55, 1.0)
 const COLOR_TOOLBAR_BG := Color(0.20, 0.21, 0.24, 1.0)
 
 enum Zoom { ONE_TO_ONE, FIT }
-enum Tool { WALL, COIN, SPIKE, GLASS, SPAWN, EXIT, TELEPORT, ERASER }
+enum Tool { WALL, COIN, SPIKE, GLASS, SPAWN, EXIT, TELEPORT, CANNON, CONVEYOR, SPIKE_BLOCK, KEY, ERASER }
 
 const TOOL_LABELS := {
 	Tool.WALL: "Wall",
@@ -40,11 +43,37 @@ const TOOL_LABELS := {
 	Tool.SPAWN: "Spawn",
 	Tool.EXIT: "Exit",
 	Tool.TELEPORT: "Teleport",
+	Tool.CANNON: "Cannon",
+	Tool.CONVEYOR: "Conveyor",
+	Tool.SPIKE_BLOCK: "Spike Block",
+	Tool.KEY: "Key",
 	Tool.ERASER: "Erase",
 }
 
+# Six maximally-distinct hues. A key + its walls share a color index
+# (0..5); key uses the bright shade, key_walls use a darkened variant.
+const KEY_COLORS := [
+	Color(0.95, 0.30, 0.30, 1.0),  # 0 red
+	Color(0.95, 0.60, 0.20, 1.0),  # 1 orange
+	Color(0.95, 0.90, 0.20, 1.0),  # 2 yellow
+	Color(0.30, 0.85, 0.35, 1.0),  # 3 green
+	Color(0.20, 0.75, 0.95, 1.0),  # 4 cyan
+	Color(0.70, 0.40, 0.95, 1.0),  # 5 purple
+]
+const KEY_COUNT := 6
+
 const SPIKE_DIRS := ["up", "down", "left", "right"]
 const SPIKE_DIR_LABELS := ["Up", "Down", "Left", "Right"]
+# Conveyor is horizontal-only; "cw" (top-surface moves right) / "ccw" (left).
+const CONVEYOR_DIRS := ["cw", "ccw"]
+const CONVEYOR_DIR_LABELS := ["CW →", "CCW ←"]
+
+# Tools that support drag-paint. Singletons (Spawn/Exit) and the
+# parameterized Teleport / Cannon are click-only. Conveyor, SpikeBlock,
+# and Key are included so long strips / fields / wall-rows are easy to
+# lay down. (Key drag: first cell places the key for the active color if
+# none exists yet; subsequent cells place walls of that color.)
+const DRAG_TOOLS := [Tool.WALL, Tool.COIN, Tool.SPIKE, Tool.GLASS, Tool.CONVEYOR, Tool.SPIKE_BLOCK, Tool.KEY, Tool.ERASER]
 
 var page_root: Node2D
 var pan_active := false
@@ -74,6 +103,20 @@ var current_spike_direction: String = "up"
 var delay_label: Label
 var delay_input: SpinBox
 var current_glass_delay: float = 1.0
+var period_input: SpinBox
+var speed_input: SpinBox
+var current_cannon_direction: String = "up"
+var current_cannon_period: float = 2.0
+var current_cannon_speed: float = 8.0
+var conv_buttons: Array[Button] = []
+var current_conveyor_direction: String = "cw"
+var key_color_buttons: Array[Button] = []
+var current_key_color: int = 0
+
+# Drag-paint state. Armed by a left-press that placed or erased (i.e.
+# didn't trigger selection). Cleared on left-release.
+var drag_active := false
+var last_drag_tile: Vector2i = Vector2i(-9999, -9999)
 
 
 func _ready() -> void:
@@ -117,18 +160,38 @@ func _build_chrome() -> void:
 
 	var group := ButtonGroup.new()
 	var y := 56.0
-	for tool_kind in [Tool.WALL, Tool.COIN, Tool.SPIKE, Tool.GLASS, Tool.SPAWN, Tool.EXIT, Tool.TELEPORT, Tool.ERASER]:
+	# 2-column tool palette. Single-column was tightened from 48/40 → 40/36
+	# → 38/34 as the tool count grew; 12 tools (Key) wouldn't fit at all
+	# without dropping below readable button heights, so we switched to
+	# 6 rows × 2 cols (each button half-width). Stride 40 / height 36.
+	var tool_list: Array = [
+		Tool.WALL, Tool.COIN,
+		Tool.SPIKE, Tool.GLASS,
+		Tool.SPAWN, Tool.EXIT,
+		Tool.TELEPORT, Tool.CANNON,
+		Tool.CONVEYOR, Tool.SPIKE_BLOCK,
+		Tool.KEY, Tool.ERASER,
+	]
+	var tool_col_w: float = (TOOLBAR_W - 32.0 - 8.0) / 2.0   # 180px each
+	var tool_stride: float = 40.0
+	for i in tool_list.size():
+		var tool_kind = tool_list[i]
+		var grid_col: int = i % 2
+		var grid_row: int = i / 2
 		var btn := Button.new()
 		btn.text = TOOL_LABELS[tool_kind]
-		btn.position = Vector2(EDIT_W + 16.0, y)
-		btn.size = Vector2(TOOLBAR_W - 32.0, 40.0)
+		btn.position = Vector2(
+			EDIT_W + 16.0 + float(grid_col) * (tool_col_w + 8.0),
+			y + float(grid_row) * tool_stride)
+		btn.size = Vector2(tool_col_w, 36.0)
 		btn.toggle_mode = true
 		btn.button_group = group
 		btn.button_pressed = (tool_kind == current_tool)
 		btn.z_index = 102
 		btn.toggled.connect(_on_tool_toggled.bind(tool_kind))
 		add_child(btn)
-		y += 48.0
+	var tool_rows: int = (tool_list.size() + 1) / 2
+	y += float(tool_rows) * tool_stride
 
 	# PARAMETERS section. Header is always visible; the conditional widgets
 	# (target-page input for Teleport, hint for everything else) are toggled
@@ -190,7 +253,7 @@ func _build_chrome() -> void:
 		btn.button_group = dir_group
 		btn.button_pressed = (SPIKE_DIRS[i] == current_spike_direction)
 		btn.z_index = 102
-		btn.toggled.connect(_on_spike_direction_toggled.bind(SPIKE_DIRS[i]))
+		btn.toggled.connect(_on_dir_toggled.bind(SPIKE_DIRS[i]))
 		add_child(btn)
 		dir_buttons.append(btn)
 
@@ -215,7 +278,91 @@ func _build_chrome() -> void:
 	delay_input.value_changed.connect(_on_glass_delay_changed)
 	add_child(delay_input)
 
-	y += 80.0  # reserved height for the parameters area
+	# Cannon-only widgets: period (interval between shots) and bullet speed.
+	# Stacked below the dir picker (cannon also uses the dir buttons). Each
+	# SpinBox is self-labeled via prefix/suffix so we don't need separate
+	# Label rows that would overlap dir_label at y.
+	period_input = SpinBox.new()
+	period_input.min_value = 0.1
+	period_input.max_value = 30.0
+	period_input.value = current_cannon_period
+	period_input.step = 0.1
+	period_input.prefix = "Period"
+	period_input.suffix = "s"
+	period_input.position = Vector2(EDIT_W + 16.0, y + 56.0)
+	period_input.size = Vector2(TOOLBAR_W - 32.0, 28.0)
+	period_input.z_index = 102
+	period_input.value_changed.connect(_on_cannon_period_changed)
+	add_child(period_input)
+
+	speed_input = SpinBox.new()
+	speed_input.min_value = 1.0
+	speed_input.max_value = 50.0
+	speed_input.value = current_cannon_speed
+	speed_input.step = 0.5
+	speed_input.prefix = "Speed"
+	speed_input.suffix = "t/s"
+	speed_input.position = Vector2(EDIT_W + 16.0, y + 88.0)
+	speed_input.size = Vector2(TOOLBAR_W - 32.0, 28.0)
+	speed_input.z_index = 102
+	speed_input.value_changed.connect(_on_cannon_speed_changed)
+	add_child(speed_input)
+
+	# Conveyor direction picker — overlays the same y-range as the spike/cannon
+	# dir buttons. Two buttons (CW/CCW) instead of four.
+	var conv_button_y := y + 24.0
+	var conv_button_w := (TOOLBAR_W - 32.0 - 8.0) / 2.0   # 2 buttons, 8px gap
+	var conv_group := ButtonGroup.new()
+	for i in 2:
+		var btn := Button.new()
+		btn.text = CONVEYOR_DIR_LABELS[i]
+		btn.position = Vector2(EDIT_W + 16.0 + float(i) * (conv_button_w + 8.0), conv_button_y)
+		btn.size = Vector2(conv_button_w, 32.0)
+		btn.toggle_mode = true
+		btn.button_group = conv_group
+		btn.button_pressed = (CONVEYOR_DIRS[i] == current_conveyor_direction)
+		btn.z_index = 102
+		btn.toggled.connect(_on_conveyor_dir_toggled.bind(CONVEYOR_DIRS[i]))
+		add_child(btn)
+		conv_buttons.append(btn)
+
+	# Key color picker — 6 colored buttons. Active color drives placement:
+	# clicking an empty cell with the Key tool places a key if no key of
+	# that color exists yet on the page, otherwise places a key wall.
+	var key_button_w: float = (TOOLBAR_W - 32.0 - 5.0 * 4.0) / float(KEY_COUNT)  # 4px gaps
+	var key_group := ButtonGroup.new()
+	for i in KEY_COUNT:
+		var btn := Button.new()
+		btn.text = "%d" % (i + 1)
+		btn.position = Vector2(
+			EDIT_W + 16.0 + float(i) * (key_button_w + 4.0),
+			y + 24.0)
+		btn.size = Vector2(key_button_w, 32.0)
+		btn.toggle_mode = true
+		btn.button_group = key_group
+		btn.button_pressed = (i == current_key_color)
+		btn.z_index = 102
+		# Color the button background. Pressed (active) state gets a white
+		# border so the choice is unambiguous against bright fills.
+		var sb_normal := StyleBoxFlat.new()
+		sb_normal.bg_color = KEY_COLORS[i]
+		btn.add_theme_stylebox_override("normal", sb_normal)
+		btn.add_theme_stylebox_override("hover", sb_normal)
+		var sb_pressed := StyleBoxFlat.new()
+		sb_pressed.bg_color = KEY_COLORS[i]
+		sb_pressed.border_width_top = 2
+		sb_pressed.border_width_bottom = 2
+		sb_pressed.border_width_left = 2
+		sb_pressed.border_width_right = 2
+		sb_pressed.border_color = Color.WHITE
+		btn.add_theme_stylebox_override("pressed", sb_pressed)
+		btn.add_theme_stylebox_override("hover_pressed", sb_pressed)
+		btn.add_theme_color_override("font_color", Color.BLACK)
+		btn.toggled.connect(_on_key_color_toggled.bind(i))
+		add_child(btn)
+		key_color_buttons.append(btn)
+
+	y += 120.0  # reserved height for the parameters area (fits cannon's 3 rows)
 
 	# PAGES section.
 	y += 16.0
@@ -271,21 +418,22 @@ func _build_chrome() -> void:
 	add_child(delete_button)
 	y += 56.0
 
-	# Save + Playtest.
+	# Save + Playtest share a row (half-width each). Combined to make
+	# vertical room for the 10th tool button and the cannon's bigger param
+	# panel without overflowing TOTAL_H.
 	y += 16.0
 	var save_btn := Button.new()
 	save_btn.text = "Save"
 	save_btn.position = Vector2(EDIT_W + 16.0, y)
-	save_btn.size = Vector2(TOOLBAR_W - 32.0, 48.0)
+	save_btn.size = Vector2(half_w, 48.0)
 	save_btn.z_index = 102
 	save_btn.pressed.connect(_save_level)
 	add_child(save_btn)
-	y += 56.0
 
 	var play_btn := Button.new()
 	play_btn.text = "Playtest"
-	play_btn.position = Vector2(EDIT_W + 16.0, y)
-	play_btn.size = Vector2(TOOLBAR_W - 32.0, 48.0)
+	play_btn.position = Vector2(EDIT_W + 16.0 + half_w + 8.0, y)
+	play_btn.size = Vector2(half_w, 48.0)
 	play_btn.z_index = 102
 	play_btn.pressed.connect(_playtest)
 	add_child(play_btn)
@@ -359,6 +507,26 @@ func _build_page(page_idx: int) -> void:
 		for gw in (page.glass_walls as Array):
 			_add_tile_rect(int(gw.x), int(gw.y), COLOR_GLASS)
 
+	if page.has("cannons"):
+		for cn in (page.cannons as Array):
+			_add_cannon(int(cn.x), int(cn.y), String(cn.dir))
+
+	if page.has("conveyors"):
+		for cv in (page.conveyors as Array):
+			_add_conveyor(int(cv.x), int(cv.y), String(cv.dir))
+
+	if page.has("spike_blocks"):
+		for sb in (page.spike_blocks as Array):
+			_add_spike_block(int(sb.x), int(sb.y))
+
+	if page.has("key_walls"):
+		for kw in (page.key_walls as Array):
+			_add_key_wall(int(kw.x), int(kw.y), int(kw.color))
+
+	if page.has("keys"):
+		for k in (page.keys as Array):
+			_add_key(int(k.x), int(k.y), int(k.color))
+
 	# Selection outline (drawn last so it sits on top of every element).
 	if selected_kind != "" and selected_pos.x >= 0:
 		var outline := _SelectionOutline.new()
@@ -415,6 +583,91 @@ func _add_spike(col: int, row: int, dir: String) -> void:
 	page_root.add_child(spike)
 
 
+# Cannon visual: full-cell body in COLOR_CANNON + a barrel rect in
+# COLOR_CANNON_BARREL extending half a cell in the firing direction. The
+# barrel makes the direction visually unambiguous in the editor.
+func _add_cannon(col: int, row: int, dir: String) -> void:
+	var ts := TILE_SIZE
+	var origin := Vector2(col * ts, row * ts)
+
+	var body := ColorRect.new()
+	body.position = origin
+	body.size = Vector2(ts, ts)
+	body.color = COLOR_CANNON
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page_root.add_child(body)
+
+	var barrel_rect: Rect2
+	match dir:
+		"up":    barrel_rect = Rect2(0.35 * ts, 0.0,        0.3 * ts, 0.5 * ts)
+		"down":  barrel_rect = Rect2(0.35 * ts, 0.5 * ts,   0.3 * ts, 0.5 * ts)
+		"left":  barrel_rect = Rect2(0.0,       0.35 * ts,  0.5 * ts, 0.3 * ts)
+		"right": barrel_rect = Rect2(0.5 * ts,  0.35 * ts,  0.5 * ts, 0.3 * ts)
+		_:       barrel_rect = Rect2(0.35 * ts, 0.0,        0.3 * ts, 0.5 * ts)
+
+	var barrel := ColorRect.new()
+	barrel.position = origin + barrel_rect.position
+	barrel.size = barrel_rect.size
+	barrel.color = COLOR_CANNON_BARREL
+	barrel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page_root.add_child(barrel)
+
+
+# Spike-block visual: full-cell red (COLOR_SPIKE) + a small central plate
+# (COLOR_SPIKE_PLATE). Echoes the existing directional spike's plate/spike
+# split, but symmetric — visually reads as "spikes radiating out from a
+# central core in all four directions."
+func _add_spike_block(col: int, row: int) -> void:
+	_add_tile_rect(col, row, COLOR_SPIKE)
+	var ts := TILE_SIZE
+	var plate_size := ts / 3.0
+	var plate := ColorRect.new()
+	plate.position = Vector2(
+		col * ts + (ts - plate_size) * 0.5,
+		row * ts + (ts - plate_size) * 0.5)
+	plate.size = Vector2(plate_size, plate_size)
+	plate.color = COLOR_SPIKE_PLATE
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page_root.add_child(plate)
+
+
+# Key visual: full-cell colored base + black "K" label, marking it
+# distinct from a key wall of the same color (which has no label).
+func _add_key(col: int, row: int, color_idx: int) -> void:
+	_add_tile_rect(col, row, KEY_COLORS[color_idx])
+	var label := Label.new()
+	label.text = "K"
+	label.position = Vector2(col * TILE_SIZE, row * TILE_SIZE)
+	label.size = Vector2(TILE_SIZE, TILE_SIZE)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", Color.BLACK)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page_root.add_child(label)
+
+
+# Key wall visual: full-cell, same hue as its key but darkened so the pair
+# is visually grouped without confusing the wall with the key.
+func _add_key_wall(col: int, row: int, color_idx: int) -> void:
+	_add_tile_rect(col, row, KEY_COLORS[color_idx].darkened(0.3))
+
+
+# Conveyor visual: full-cell base in COLOR_CONVEYOR + an arrow label
+# (→ for cw, ← for ccw) so a strip of cells reads as a continuous belt with
+# clear direction at a glance.
+func _add_conveyor(col: int, row: int, dir: String) -> void:
+	_add_tile_rect(col, row, COLOR_CONVEYOR)
+	var arrow := Label.new()
+	arrow.text = "→" if dir == "cw" else "←"
+	arrow.position = Vector2(col * TILE_SIZE, row * TILE_SIZE)
+	arrow.size = Vector2(TILE_SIZE, TILE_SIZE)
+	arrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	arrow.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	arrow.add_theme_color_override("font_color", Color.WHITE)
+	arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page_root.add_child(arrow)
+
+
 func _add_teleport_label(col: int, row: int, target_page: int) -> void:
 	var label := Label.new()
 	label.text = "→%d" % (target_page + 1)
@@ -452,17 +705,27 @@ func _on_tool_toggled(pressed: bool, tool_kind: int) -> void:
 # PARAMETERS shows the selected element's parameters when something
 # parameterized is selected; otherwise it shows the placement defaults of
 # the active tool. Parameterized elements: Teleport (target page),
-# Spike (direction).
+# Spike (direction), Glass (break delay), Cannon (direction + period + speed).
 func _refresh_parameters_panel() -> void:
 	var show_teleport := false
-	var show_dir := false
+	var show_dir := false        # spike OR cannon (4-way picker)
 	var show_delay := false
+	var show_cannon := false     # cannon-only extras (period, speed)
+	var show_conveyor := false   # conveyor (2-way CW/CCW picker)
+	var show_key := false        # key (6-color picker)
 	if selected_kind == "teleport":
 		show_teleport = true
 	elif selected_kind == "spike":
 		show_dir = true
 	elif selected_kind == "glass":
 		show_delay = true
+	elif selected_kind == "cannon":
+		show_dir = true
+		show_cannon = true
+	elif selected_kind == "conveyor":
+		show_conveyor = true
+	elif selected_kind == "key" or selected_kind == "key_wall":
+		show_key = true
 	elif selected_kind == "":
 		if current_tool == Tool.TELEPORT:
 			show_teleport = true
@@ -470,14 +733,46 @@ func _refresh_parameters_panel() -> void:
 			show_dir = true
 		elif current_tool == Tool.GLASS:
 			show_delay = true
+		elif current_tool == Tool.CANNON:
+			show_dir = true
+			show_cannon = true
+		elif current_tool == Tool.CONVEYOR:
+			show_conveyor = true
+		elif current_tool == Tool.KEY:
+			show_key = true
 	tgt_label.visible = show_teleport
 	teleport_target_input.visible = show_teleport
-	dir_label.visible = show_dir
+	dir_label.visible = show_dir or show_conveyor or show_key
+	if show_key:
+		dir_label.text = "Color:"
+	else:
+		dir_label.text = "Direction:"
 	for btn in dir_buttons:
 		btn.visible = show_dir
+	for btn in conv_buttons:
+		btn.visible = show_conveyor
+	for btn in key_color_buttons:
+		btn.visible = show_key
 	delay_label.visible = show_delay
 	delay_input.visible = show_delay
-	hint_label.visible = not (show_teleport or show_dir or show_delay)
+	period_input.visible = show_cannon
+	speed_input.visible = show_cannon
+	hint_label.visible = not (show_teleport or show_dir or show_delay \
+			or show_cannon or show_conveyor or show_key)
+	# Sync the dir buttons to the right context's "current direction" — spike
+	# and cannon each track their own default.
+	if show_dir:
+		var active_dir := current_spike_direction
+		if selected_kind == "cannon" or (selected_kind == "" and current_tool == Tool.CANNON):
+			active_dir = current_cannon_direction
+		for i in dir_buttons.size():
+			dir_buttons[i].set_pressed_no_signal(SPIKE_DIRS[i] == active_dir)
+	if show_conveyor:
+		for i in conv_buttons.size():
+			conv_buttons[i].set_pressed_no_signal(CONVEYOR_DIRS[i] == current_conveyor_direction)
+	if show_key:
+		for i in key_color_buttons.size():
+			key_color_buttons[i].set_pressed_no_signal(i == current_key_color)
 
 
 func _on_glass_delay_changed(value: float) -> void:
@@ -493,20 +788,90 @@ func _on_glass_delay_changed(value: float) -> void:
 			return
 
 
-func _on_spike_direction_toggled(pressed: bool, dir: String) -> void:
+# Shared between Spike and Cannon — both use the dir buttons. Dispatches by
+# active context (selected element first, then active tool).
+func _on_dir_toggled(pressed: bool, dir: String) -> void:
 	if not pressed:
 		return
-	current_spike_direction = dir
-	if selected_kind != "spike":
-		return  # placement default updated; no element to write back to
-	var page: Dictionary = level_data.pages[current_page_index]
-	if not page.has("spikes"):
+	var is_cannon := selected_kind == "cannon" \
+			or (selected_kind == "" and current_tool == Tool.CANNON)
+	if is_cannon:
+		current_cannon_direction = dir
+		if selected_kind != "cannon":
+			return
+		var page: Dictionary = level_data.pages[current_page_index]
+		if not page.has("cannons"):
+			return
+		for cn in (page.cannons as Array):
+			if int(cn.x) == selected_pos.x and int(cn.y) == selected_pos.y:
+				cn.dir = dir
+				_rebuild_page_visuals()
+				return
+	else:
+		current_spike_direction = dir
+		if selected_kind != "spike":
+			return  # placement default updated; no element to write back to
+		var page: Dictionary = level_data.pages[current_page_index]
+		if not page.has("spikes"):
+			return
+		for sp in (page.spikes as Array):
+			if int(sp.x) == selected_pos.x and int(sp.y) == selected_pos.y:
+				sp.dir = dir
+				_rebuild_page_visuals()
+				return
+
+
+func _on_cannon_period_changed(value: float) -> void:
+	current_cannon_period = value
+	if selected_kind != "cannon":
 		return
-	for sp in (page.spikes as Array):
-		if int(sp.x) == selected_pos.x and int(sp.y) == selected_pos.y:
-			sp.dir = dir
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("cannons"):
+		return
+	for cn in (page.cannons as Array):
+		if int(cn.x) == selected_pos.x and int(cn.y) == selected_pos.y:
+			cn.period = value
+			return
+
+
+func _on_cannon_speed_changed(value: float) -> void:
+	current_cannon_speed = value
+	if selected_kind != "cannon":
+		return
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("cannons"):
+		return
+	for cn in (page.cannons as Array):
+		if int(cn.x) == selected_pos.x and int(cn.y) == selected_pos.y:
+			cn.bullet_speed = value
+			return
+
+
+func _on_conveyor_dir_toggled(pressed: bool, dir: String) -> void:
+	if not pressed:
+		return
+	current_conveyor_direction = dir
+	if selected_kind != "conveyor":
+		return
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("conveyors"):
+		return
+	for cv in (page.conveyors as Array):
+		if int(cv.x) == selected_pos.x and int(cv.y) == selected_pos.y:
+			cv.dir = dir
 			_rebuild_page_visuals()
 			return
+
+
+# Switches the active key color. Unlike spike/cannon dir, this never
+# rewrites a selected element's color: a key's color is its identity (it
+# pairs with walls of the same color), and changing it from the picker
+# would silently break the pair. The picker just sets which color the
+# next placement uses; to retag a key, the user erases and replaces.
+func _on_key_color_toggled(pressed: bool, color_idx: int) -> void:
+	if not pressed:
+		return
+	current_key_color = color_idx
 
 
 func _clear_selection() -> void:
@@ -515,8 +880,8 @@ func _clear_selection() -> void:
 
 
 # Looks up what's at (col, row) on the current page. Returns kind ∈
-# {"none", "wall", "coin", "spawn", "exit", "teleport"} plus an optional
-# "ref" Dictionary for elements stored as objects (currently teleports).
+# {"none", "wall", "coin", "spawn", "exit", "teleport", "spike", "glass",
+# "cannon"} plus an optional "ref" Dictionary for elements stored as objects.
 func _element_at(col: int, row: int) -> Dictionary:
 	if level_data.is_empty():
 		return {"kind": "none"}
@@ -546,6 +911,26 @@ func _element_at(col: int, row: int) -> Dictionary:
 		for gw in (page.glass_walls as Array):
 			if int(gw.x) == col and int(gw.y) == row:
 				return {"kind": "glass", "ref": gw}
+	if page.has("cannons"):
+		for cn in (page.cannons as Array):
+			if int(cn.x) == col and int(cn.y) == row:
+				return {"kind": "cannon", "ref": cn}
+	if page.has("conveyors"):
+		for cv in (page.conveyors as Array):
+			if int(cv.x) == col and int(cv.y) == row:
+				return {"kind": "conveyor", "ref": cv}
+	if page.has("spike_blocks"):
+		for sb in (page.spike_blocks as Array):
+			if int(sb.x) == col and int(sb.y) == row:
+				return {"kind": "spike_block", "ref": sb}
+	if page.has("keys"):
+		for k in (page.keys as Array):
+			if int(k.x) == col and int(k.y) == row:
+				return {"kind": "key", "ref": k}
+	if page.has("key_walls"):
+		for kw in (page.key_walls as Array):
+			if int(kw.x) == col and int(kw.y) == row:
+				return {"kind": "key_wall", "ref": kw}
 	match (tiles[row] as String).substr(col, 1):
 		"W": return {"kind": "wall"}
 		"C": return {"kind": "coin"}
@@ -577,18 +962,42 @@ func _input(event: InputEvent) -> void:
 				pan_anchor_root = page_root.position
 			else:
 				pan_active = false
-		elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
-			if pan_active or mb.position.x >= EDIT_W:
-				return
-			if mb.double_click:
-				zoom_mode = Zoom.FIT if zoom_mode == Zoom.ONE_TO_ONE else Zoom.ONE_TO_ONE
-				_apply_zoom()
+		elif mb.button_index == MOUSE_BUTTON_LEFT:
+			if mb.pressed:
+				if pan_active or mb.position.x >= EDIT_W:
+					return
+				if mb.double_click:
+					zoom_mode = Zoom.FIT if zoom_mode == Zoom.ONE_TO_ONE else Zoom.ONE_TO_ONE
+					_apply_zoom()
+				else:
+					var tile := _window_to_tile(mb.position)
+					var was_selection := _apply_tool_at(tile.x, tile.y)
+					if not was_selection and current_tool in DRAG_TOOLS:
+						drag_active = true
+						# Re-read the tile after the click — _apply_tool_at
+						# may have grown the page and shifted coords.
+						last_drag_tile = _window_to_tile(mb.position)
+					else:
+						drag_active = false
 			else:
-				var tile := _window_to_tile(mb.position)
-				_apply_tool_at(tile.x, tile.y)
-	elif event is InputEventMouseMotion and pan_active:
+				drag_active = false
+	elif event is InputEventMouseMotion:
 		var mm: InputEventMouseMotion = event
-		page_root.position = pan_anchor_root + (mm.position - pan_anchor_screen)
+		if pan_active:
+			page_root.position = pan_anchor_root + (mm.position - pan_anchor_screen)
+		elif drag_active:
+			if mm.position.x >= EDIT_W:
+				return
+			var tile := _window_to_tile(mm.position)
+			if tile == last_drag_tile:
+				return
+			# Walk the line so a fast mouse doesn't leave gaps. Skip the
+			# starting cell — it was already handled in the previous step.
+			for cell in _line_tiles(last_drag_tile, tile):
+				if cell == last_drag_tile:
+					continue
+				_apply_drag_tool_at(cell.x, cell.y)
+			last_drag_tile = tile
 
 
 func _window_to_tile(window_pos: Vector2) -> Vector2i:
@@ -596,9 +1005,11 @@ func _window_to_tile(window_pos: Vector2) -> Vector2i:
 	return Vector2i(int(floor(local.x / TILE_SIZE)), int(floor(local.y / TILE_SIZE)))
 
 
-func _apply_tool_at(col: int, row: int) -> void:
+func _apply_tool_at(col: int, row: int) -> bool:
+	# Returns true if the click selected an existing element (caller uses
+	# this to decide whether to arm drag-paint — selection should NOT drag).
 	if level_data.is_empty():
-		return
+		return false
 	# Every click starts by clearing the previous selection. If the click
 	# turns out to land on an occupied cell with a placement tool, the
 	# selection gets re-set below.
@@ -615,9 +1026,14 @@ func _apply_tool_at(col: int, row: int) -> void:
 			_clear_teleport_at(col, row)
 			_clear_spike_at(col, row)
 			_clear_glass_at(col, row)
+			_clear_cannon_at(col, row)
+			_clear_conveyor_at(col, row)
+			_clear_spike_block_at(col, row)
+			_clear_key_at(col, row)         # cascades: also drops paired walls
+			_clear_key_wall_at(col, row)
 		_refresh_parameters_panel()
 		_rebuild_page_visuals()
-		return
+		return false
 
 	# Placement tools never overwrite. Clicking an occupied cell selects
 	# the existing element instead of placing a new one.
@@ -628,14 +1044,24 @@ func _apply_tool_at(col: int, row: int) -> void:
 			teleport_target_input.set_value_no_signal(int(info.ref.target_page) + 1)
 		elif selected_kind == "spike":
 			current_spike_direction = String(info.ref.dir)
-			for i in dir_buttons.size():
-				dir_buttons[i].set_pressed_no_signal(SPIKE_DIRS[i] == current_spike_direction)
 		elif selected_kind == "glass":
 			current_glass_delay = float(info.ref.delay)
 			delay_input.set_value_no_signal(current_glass_delay)
+		elif selected_kind == "cannon":
+			current_cannon_direction = String(info.ref.dir)
+			current_cannon_period = float(info.ref.period)
+			current_cannon_speed = float(info.ref.bullet_speed)
+			period_input.set_value_no_signal(current_cannon_period)
+			speed_input.set_value_no_signal(current_cannon_speed)
+		elif selected_kind == "conveyor":
+			current_conveyor_direction = String(info.ref.dir)
+		elif selected_kind == "key" or selected_kind == "key_wall":
+			# Selecting a key (or any of its walls) sets the active color
+			# so the user's next click naturally extends that key's set.
+			current_key_color = int(info.ref.color)
 		_refresh_parameters_panel()
 		_rebuild_page_visuals()
-		return
+		return true
 
 	# Empty cell + placement tool → place. May extend the page if the click
 	# was outside its current bounds.
@@ -657,8 +1083,110 @@ func _apply_tool_at(col: int, row: int) -> void:
 			_place_spike(col, row, current_spike_direction)
 		Tool.GLASS:
 			_place_glass(col, row, current_glass_delay)
+		Tool.CANNON:
+			_place_cannon(col, row, current_cannon_direction,
+					current_cannon_period, current_cannon_speed)
+		Tool.CONVEYOR:
+			_place_conveyor(col, row, current_conveyor_direction)
+		Tool.SPIKE_BLOCK:
+			_place_spike_block(col, row)
+		Tool.KEY:
+			# First click for an unused color places the key; once that
+			# color's key exists on the page, subsequent empty-cell clicks
+			# place walls of that color.
+			if _key_exists_on_page(current_key_color):
+				_place_key_wall(col, row, current_key_color)
+			else:
+				_place_key(col, row, current_key_color)
 	_refresh_parameters_panel()
 	_rebuild_page_visuals()
+	return false
+
+
+# Drag-paint helper. Unlike _apply_tool_at, drag never selects, never
+# overwrites, and does not grow the page — out-of-bounds cells are
+# silently skipped so a fast cross-edge drag does not extend the canvas.
+func _apply_drag_tool_at(col: int, row: int) -> void:
+	if level_data.is_empty():
+		return
+	var page: Dictionary = level_data.pages[current_page_index]
+	var tiles: Array = page.tiles
+	var rows: int = tiles.size()
+	var cols: int = (tiles[0] as String).length()
+	if col < 0 or col >= cols or row < 0 or row >= rows:
+		return
+
+	var info := _element_at(col, row)
+
+	if current_tool == Tool.ERASER:
+		if info.kind == "none":
+			return
+		_set_tile_char(col, row, ".")
+		_clear_spawn_at(col, row)
+		_clear_exit_at(col, row)
+		_clear_teleport_at(col, row)
+		_clear_spike_at(col, row)
+		_clear_glass_at(col, row)
+		_clear_cannon_at(col, row)
+		_clear_conveyor_at(col, row)
+		_clear_spike_block_at(col, row)
+		_clear_key_at(col, row)         # cascades: also drops paired walls
+		_clear_key_wall_at(col, row)
+		_rebuild_page_visuals()
+		return
+
+	# Placement tools: skip occupied cells.
+	if info.kind != "none":
+		return
+	match current_tool:
+		Tool.WALL:
+			_set_tile_char(col, row, "W")
+		Tool.COIN:
+			_set_tile_char(col, row, "C")
+		Tool.SPIKE:
+			_place_spike(col, row, current_spike_direction)
+		Tool.GLASS:
+			_place_glass(col, row, current_glass_delay)
+		Tool.CONVEYOR:
+			_place_conveyor(col, row, current_conveyor_direction)
+		Tool.SPIKE_BLOCK:
+			_place_spike_block(col, row)
+		Tool.KEY:
+			if _key_exists_on_page(current_key_color):
+				_place_key_wall(col, row, current_key_color)
+			else:
+				_place_key(col, row, current_key_color)
+		_:
+			return  # non-drag tool; shouldn't reach here
+	_rebuild_page_visuals()
+
+
+# Bresenham line in tile space. Returns cells from `from` to `to`
+# inclusive. Used during drag to fill cells the mouse skipped between
+# motion events.
+func _line_tiles(from: Vector2i, to: Vector2i) -> Array:
+	var out: Array = []
+	var x0: int = from.x
+	var y0: int = from.y
+	var x1: int = to.x
+	var y1: int = to.y
+	var dx: int = absi(x1 - x0)
+	var dy: int = -absi(y1 - y0)
+	var sx: int = 1 if x0 < x1 else -1
+	var sy: int = 1 if y0 < y1 else -1
+	var err: int = dx + dy
+	while true:
+		out.append(Vector2i(x0, y0))
+		if x0 == x1 and y0 == y1:
+			break
+		var e2: int = 2 * err
+		if e2 >= dy:
+			err += dy
+			x0 += sx
+		if e2 <= dx:
+			err += dx
+			y0 += sy
+	return out
 
 
 # Expands the current page's tile array so (col, row) is in bounds. For
@@ -731,6 +1259,26 @@ func _offset_elements(page_idx: int, dx: int, dy: int) -> void:
 		for gw in (page.glass_walls as Array):
 			gw.x = int(gw.x) + dx
 			gw.y = int(gw.y) + dy
+	if page.has("cannons"):
+		for cn in (page.cannons as Array):
+			cn.x = int(cn.x) + dx
+			cn.y = int(cn.y) + dy
+	if page.has("conveyors"):
+		for cv in (page.conveyors as Array):
+			cv.x = int(cv.x) + dx
+			cv.y = int(cv.y) + dy
+	if page.has("spike_blocks"):
+		for sb in (page.spike_blocks as Array):
+			sb.x = int(sb.x) + dx
+			sb.y = int(sb.y) + dy
+	if page.has("keys"):
+		for k in (page.keys as Array):
+			k.x = int(k.x) + dx
+			k.y = int(k.y) + dy
+	if page.has("key_walls"):
+		for kw in (page.key_walls as Array):
+			kw.x = int(kw.x) + dx
+			kw.y = int(kw.y) + dy
 
 
 # Trims page_idx to the bbox of its placements and shifts coords to (0,0).
@@ -793,6 +1341,46 @@ func _normalize_page(page_idx: int) -> Vector2i:
 			if gx > max_col: max_col = gx
 			if gy < min_row: min_row = gy
 			if gy > max_row: max_row = gy
+	if page.has("cannons"):
+		for cn in (page.cannons as Array):
+			var cx := int(cn.x)
+			var cy := int(cn.y)
+			if cx < min_col: min_col = cx
+			if cx > max_col: max_col = cx
+			if cy < min_row: min_row = cy
+			if cy > max_row: max_row = cy
+	if page.has("conveyors"):
+		for cv in (page.conveyors as Array):
+			var vx := int(cv.x)
+			var vy := int(cv.y)
+			if vx < min_col: min_col = vx
+			if vx > max_col: max_col = vx
+			if vy < min_row: min_row = vy
+			if vy > max_row: max_row = vy
+	if page.has("spike_blocks"):
+		for sb in (page.spike_blocks as Array):
+			var bx := int(sb.x)
+			var by := int(sb.y)
+			if bx < min_col: min_col = bx
+			if bx > max_col: max_col = bx
+			if by < min_row: min_row = by
+			if by > max_row: max_row = by
+	if page.has("keys"):
+		for k in (page.keys as Array):
+			var kx := int(k.x)
+			var ky := int(k.y)
+			if kx < min_col: min_col = kx
+			if kx > max_col: max_col = kx
+			if ky < min_row: min_row = ky
+			if ky > max_row: max_row = ky
+	if page.has("key_walls"):
+		for kw in (page.key_walls as Array):
+			var wx := int(kw.x)
+			var wy := int(kw.y)
+			if wx < min_col: min_col = wx
+			if wx > max_col: max_col = wx
+			if wy < min_row: min_row = wy
+			if wy > max_row: max_row = wy
 
 	if max_col < 0:
 		page.tiles = ["."]
@@ -892,6 +1480,128 @@ func _clear_glass_at(col: int, row: int) -> void:
 			continue
 		keep.append(gw)
 	page.glass_walls = keep
+
+
+func _place_cannon(col: int, row: int, dir: String, period: float, bullet_speed: float) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("cannons"):
+		page.cannons = []
+	(page.cannons as Array).append({
+		"x": col, "y": row, "dir": dir,
+		"period": period, "bullet_speed": bullet_speed,
+	})
+
+
+func _clear_cannon_at(col: int, row: int) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("cannons"):
+		return
+	var keep: Array = []
+	for cn in (page.cannons as Array):
+		if int(cn.x) == col and int(cn.y) == row:
+			continue
+		keep.append(cn)
+	page.cannons = keep
+
+
+func _place_conveyor(col: int, row: int, dir: String) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("conveyors"):
+		page.conveyors = []
+	(page.conveyors as Array).append({"x": col, "y": row, "dir": dir})
+
+
+func _clear_conveyor_at(col: int, row: int) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("conveyors"):
+		return
+	var keep: Array = []
+	for cv in (page.conveyors as Array):
+		if int(cv.x) == col and int(cv.y) == row:
+			continue
+		keep.append(cv)
+	page.conveyors = keep
+
+
+func _place_spike_block(col: int, row: int) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("spike_blocks"):
+		page.spike_blocks = []
+	(page.spike_blocks as Array).append({"x": col, "y": row})
+
+
+func _clear_spike_block_at(col: int, row: int) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("spike_blocks"):
+		return
+	var keep: Array = []
+	for sb in (page.spike_blocks as Array):
+		if int(sb.x) == col and int(sb.y) == row:
+			continue
+		keep.append(sb)
+	page.spike_blocks = keep
+
+
+func _key_exists_on_page(color_idx: int) -> bool:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("keys"):
+		return false
+	for k in (page.keys as Array):
+		if int(k.color) == color_idx:
+			return true
+	return false
+
+
+func _place_key(col: int, row: int, color_idx: int) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("keys"):
+		page.keys = []
+	(page.keys as Array).append({"x": col, "y": row, "color": color_idx})
+
+
+func _place_key_wall(col: int, row: int, color_idx: int) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("key_walls"):
+		page.key_walls = []
+	(page.key_walls as Array).append({"x": col, "y": row, "color": color_idx})
+
+
+# Removes the key at (col, row) AND cascade-removes every key_wall sharing
+# its color on this page (per spec: erasing a key drops its paired walls).
+func _clear_key_at(col: int, row: int) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("keys"):
+		return
+	var color_to_drop: int = -1
+	var keep_keys: Array = []
+	for k in (page.keys as Array):
+		if int(k.x) == col and int(k.y) == row:
+			color_to_drop = int(k.color)
+			continue
+		keep_keys.append(k)
+	page.keys = keep_keys
+	if color_to_drop < 0:
+		return
+	if not page.has("key_walls"):
+		return
+	var keep_walls: Array = []
+	for kw in (page.key_walls as Array):
+		if int(kw.color) == color_to_drop:
+			continue
+		keep_walls.append(kw)
+	page.key_walls = keep_walls
+
+
+func _clear_key_wall_at(col: int, row: int) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("key_walls"):
+		return
+	var keep: Array = []
+	for kw in (page.key_walls as Array):
+		if int(kw.x) == col and int(kw.y) == row:
+			continue
+		keep.append(kw)
+	page.key_walls = keep
 
 
 func _save_level() -> void:
