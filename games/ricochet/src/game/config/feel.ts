@@ -52,6 +52,9 @@ export const COLOR_CONVEYOR = 0x666c8c;       // muted blue-gray (matches Godot 
 export const COLOR_CANNON = 0x4d4d52;         // dark gray (matches Godot COLOR_CANNON)
 export const COLOR_CANNON_BARREL = 0x8c8c99;  // lighter gray (matches Godot COLOR_CANNON_BARREL)
 export const COLOR_BULLET = 0xf27240;         // orange-red (matches Godot bullet color)
+export const COLOR_GEAR = 0x999999;           // medium gray (the disc)
+export const COLOR_GEAR_SPOKE = 0x333333;     // dark gray (the rotating spokes)
+export const COLOR_GEAR_HUB = 0xff9933;       // bright orange (the center hub — makes spin readable)
 
 // Six maximally-distinct key colors (mirrors Godot KEY_COLORS). Each
 // index pairs a "light" variant for the bright key pickup with a "dark"

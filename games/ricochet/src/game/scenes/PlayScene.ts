@@ -17,6 +17,7 @@ import {
 } from '../config/feel';
 import { Bullet } from '../entities/Bullet';
 import { Cannon } from '../entities/Cannon';
+import { Gear } from '../entities/Gear';
 import { CONVEYOR_DIR_DATA_KEY, Player, PlayerState } from '../entities/Player';
 import { validateLevel } from '../../shared/level-format/load';
 import type { CardinalDir, PageData } from '../../shared/level-format/types';
@@ -83,6 +84,10 @@ export class PlayScene extends Phaser.Scene {
   // Key walls: solid wall-like static bodies in their own group, so the
   // pickup-driven removal can iterate JUST the matching-color walls.
   private keyWalls!: Phaser.Physics.Arcade.StaticGroup;
+  // Gears tick in PlayScene.update; collisions handled via overlap with
+  // the player. Bullets pass through gears (matching Godot — gears are
+  // collision_mask=2, player only).
+  private gears: Gear[] = [];
   private debugText!: Phaser.GameObjects.Text;
   private hudText!: Phaser.GameObjects.Text;
 
@@ -126,6 +131,7 @@ export class PlayScene extends Phaser.Scene {
     this.cannons = [];
     this.keys = this.add.group();
     this.keyWalls = this.physics.add.staticGroup();
+    this.gears = [];
     this.buildWalls(page);
     this.buildSpikes(page);
     this.buildGlassWalls(page);
@@ -134,6 +140,7 @@ export class PlayScene extends Phaser.Scene {
     this.buildCannons(page);
     this.buildKeyWalls(page);
     this.buildKeys(page);
+    this.buildGears(page);
 
     // Input wiring — the player gets references to the cursor keys and
     // jump key so it doesn't have to reach into the scene's input plugin.
@@ -191,6 +198,10 @@ export class PlayScene extends Phaser.Scene {
       this.player.die();
       bullet.destroy();
     });
+    // Player vs gears (overlap kills). Gears are intentionally NOT in
+    // the bullet wall-hit handler — bullets pass through them, mirroring
+    // the Godot collision_mask=2 (player only) configuration.
+    this.physics.add.overlap(this.player, this.gears, () => this.player.die());
 
     // HUD — anchored to the screen, not the world, so it doesn't move
     // when the camera scrolls (setScrollFactor(0) is the standard idiom).
@@ -230,6 +241,9 @@ export class PlayScene extends Phaser.Scene {
     const dt = delta / 1000;
     for (const cannon of this.cannons) {
       cannon.tick(dt);
+    }
+    for (const gear of this.gears) {
+      gear.tick(dt);
     }
     // Tick all live bullets (decrements ignoreTimer + lifetime).
     this.bullets.getChildren().forEach((b) => {
@@ -525,6 +539,35 @@ export class PlayScene extends Phaser.Scene {
       if (wall.getData('color') === colorIdx) {
         wall.destroy();
       }
+    }
+  }
+
+  private buildGears(page: PageData): void {
+    if (!page.gears) {
+      return;
+    }
+    for (const g of page.gears) {
+      const radiusPx = (g.size * TILE_SIZE) / 2;
+      const speedPx = g.speed * TILE_SIZE;
+      // Build the path in pixel coords. Index 0 is home, then each
+      // waypoint cell-center.
+      const path: Phaser.Math.Vector2[] = [
+        new Phaser.Math.Vector2((g.x + 0.5) * TILE_SIZE, (g.y + 0.5) * TILE_SIZE),
+      ];
+      for (const wp of g.waypoints) {
+        path.push(new Phaser.Math.Vector2((wp.x + 0.5) * TILE_SIZE, (wp.y + 0.5) * TILE_SIZE));
+      }
+      const gear = new Gear(
+        this,
+        path[0]!.x,
+        path[0]!.y,
+        radiusPx,
+        speedPx,
+        g.spin,
+        path,
+        g.closed,
+      );
+      this.gears.push(gear);
     }
   }
 

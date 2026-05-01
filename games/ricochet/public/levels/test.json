@@ -18,7 +18,16 @@
         {"x": 17, "y": 12, "dir": "cw"},
         {"x": 18, "y": 12, "dir": "cw"}
       ],
-      "gears": [],
+      "gears": [
+        {
+          "x": 5, "y": 9,
+          "size": 2,
+          "speed": 3.0,
+          "spin": 4.0,
+          "waypoints": [{"x": 20, "y": 9}],
+          "closed": false
+        }
+      ],
       "glass_walls": [
         {"x": 6, "y": 17, "delay": 1.5}
       ],
