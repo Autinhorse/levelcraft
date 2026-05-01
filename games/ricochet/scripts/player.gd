@@ -24,7 +24,9 @@ const _SHAPE_VMOVE := Vector2(TILE_SIZE - 4.0, TILE_SIZE - 2.0)  # 44 × 46 — 
 @export var rebound_distance_tiles: float = 1.0
 @export var conveyor_speed_tiles: float = 4.0      # horizontal push while standing on a conveyor
 @export var pause_time: float = 0.1                # seconds at apex / after rebound, before falling
-@export var death_pause: float = 0.5               # seconds dead before respawn
+@export var death_pause: float = 1.2               # seconds dead before respawn (covers the death animation)
+@export var death_pop_tiles: float = 2.0           # initial upward kick on death (peak height in tiles)
+@export var death_spin_speed: float = 6.0          # rotation rate during death (radians/sec)
 
 # Cached pixel-space values derived from the exports above (set in _ready).
 var flight_speed: float
@@ -35,6 +37,12 @@ var rebound_distance: float
 var conveyor_speed: float
 # Initial up-velocity to reach jump_height under gravity: v = sqrt(2*g*h).
 var jump_initial_velocity: float
+# Initial up-velocity for the death pop: same formula, with death_pop_tiles.
+var death_initial_velocity: float
+# Collision masks captured by _die so _dead can restore them on respawn —
+# during the death animation the body falls cleanly through every tile.
+var _saved_collision_layer: int = 0
+var _saved_collision_mask: int = 0
 
 enum State {
 	IDLE,           # standing on a floor, accepting input
@@ -70,6 +78,7 @@ func _ready() -> void:
 	rebound_distance = rebound_distance_tiles * TILE_SIZE
 	conveyor_speed = conveyor_speed_tiles * TILE_SIZE
 	jump_initial_velocity = sqrt(2.0 * gravity * jump_height)
+	death_initial_velocity = sqrt(2.0 * gravity * death_pop_tiles * TILE_SIZE)
 
 	# Grab the player's RectangleShape2D so we can resize it per state.
 	for child in get_children():
@@ -326,11 +335,20 @@ func _falling_input(delta: float) -> void:
 		state = State.IDLE
 
 func _dead(delta: float) -> void:
+	# Death animation: gravity-driven arc with continuous rotation, position
+	# integrated manually so we don't fight the disabled collision masks.
+	# When the timer expires the body teleports back to spawn upright.
+	velocity.y += gravity * delta
+	position += velocity * delta
+	rotation += death_spin_speed * delta
 	pause_timer -= delta
 	if pause_timer <= 0.0:
 		position = spawn_position
 		velocity = Vector2.ZERO
+		rotation = 0.0
 		direction = 0
+		collision_layer = _saved_collision_layer
+		collision_mask = _saved_collision_mask
 		state = State.IDLE
 
 func _update_collision_shape() -> void:
@@ -436,8 +454,15 @@ func _hit_hazard() -> bool:
 
 
 func _die() -> void:
-	velocity = Vector2.ZERO
+	# Pop straight up and start the spin. Collisions are masked off so the
+	# body falls cleanly through the floor/walls below; _dead handles the
+	# manual integration and respawn.
+	velocity = Vector2(0.0, -death_initial_velocity)
 	pause_timer = death_pause
+	_saved_collision_layer = collision_layer
+	_saved_collision_mask = collision_mask
+	collision_layer = 0
+	collision_mask = 0
 	state = State.DEAD
 
 

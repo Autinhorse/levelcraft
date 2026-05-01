@@ -88,6 +88,9 @@ func _build_current_page() -> void:
 	_build_spike_blocks(page)
 	_build_key_walls(page)
 	_build_keys(page)
+	_build_gears(page)
+	_build_portals(page)
+	_build_turrets(page)
 	var spawn_pos := _cell_center(int(page.spawn.x), int(page.spawn.y))
 	_spawn_player(spawn_pos)
 
@@ -384,6 +387,73 @@ func _make_cannon(col: int, row: int, dir: String, period: float, bullet_speed: 
 	page_root.add_child(cannon)
 
 
+func _build_turrets(page: Dictionary) -> void:
+	if not page.has("turrets"):
+		return
+	for t in (page.turrets as Array):
+		var period := 2.0
+		var bullet_speed := 8.0
+		if t.has("period"):
+			period = float(t.period)
+		if t.has("bullet_speed"):
+			bullet_speed = float(t.bullet_speed)
+		_make_turret(int(t.x), int(t.y), period, bullet_speed)
+
+
+# Builds a Turret at (col, row): full-cell StaticBody2D on layer 1 (blocks
+# the player) plus a barrel rotor parented to the turret. The Turret script
+# spins the rotor toward the player and fires bullets from its current
+# facing — see turret.gd for the tracking + firing logic.
+func _make_turret(col: int, row: int, period: float, bullet_speed: float) -> void:
+	var turret := Turret.new()
+	turret.position = _cell_center(col, row)
+	turret.collision_layer = 1
+	turret.period = period
+	turret.bullet_speed_tiles = bullet_speed
+
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(TILE_SIZE, TILE_SIZE)
+	shape.shape = rect
+	turret.add_child(shape)
+
+	var body_visual := ColorRect.new()
+	body_visual.position = Vector2(-TILE_SIZE / 2.0, -TILE_SIZE / 2.0)
+	body_visual.size = Vector2(TILE_SIZE, TILE_SIZE)
+	body_visual.color = COLOR_CANNON
+	turret.add_child(body_visual)
+
+	# Barrel rotor: a Node2D pivoted at the turret's center. The Turret
+	# script writes barrel.rotation each physics frame; the ColorRect
+	# inside it draws a rectangle pointing along the rotor's local +X axis
+	# (so rotation 0 = right). Initial rotation = -PI/2 so it visually
+	# points "up" before the player is found.
+	var barrel := Node2D.new()
+	barrel.rotation = -PI / 2.0
+	turret.add_child(barrel)
+	turret.barrel = barrel
+
+	var barrel_rect := ColorRect.new()
+	# Position the rect along +X, centered on the rotation axis vertically.
+	var b_w := TILE_SIZE * 0.40
+	var b_h := TILE_SIZE * 0.20
+	barrel_rect.position = Vector2(0.0, -b_h * 0.5)
+	barrel_rect.size = Vector2(b_w, b_h)
+	barrel_rect.color = COLOR_CANNON_BARREL
+	barrel.add_child(barrel_rect)
+
+	# Center hub — bright "eye" so the rotor reads at a glance even when
+	# the barrel spins fast.
+	var hub := ColorRect.new()
+	var hub_size := TILE_SIZE * 0.20
+	hub.position = Vector2(-hub_size * 0.5, -hub_size * 0.5)
+	hub.size = Vector2(hub_size, hub_size)
+	hub.color = Color(0.85, 0.85, 0.20, 1.0)
+	turret.add_child(hub)
+
+	page_root.add_child(turret)
+
+
 func _build_conveyors(page: Dictionary) -> void:
 	if not page.has("conveyors"):
 		return
@@ -462,6 +532,90 @@ func _make_spike_block(col: int, row: int) -> void:
 	body.add_child(plate)
 
 	page_root.add_child(body)
+
+
+func _build_gears(page: Dictionary) -> void:
+	if not page.has("gears"):
+		return
+	for g in (page.gears as Array):
+		_make_gear(g)
+
+
+# Portals come in pairs; only fully-formed pairs (2 points) are spawned.
+# Orphans are silently skipped — they exist in the editor as a half-built
+# placement but have no runtime behavior.
+func _build_portals(page: Dictionary) -> void:
+	if not page.has("portals"):
+		return
+	for pair in (page.portals as Array):
+		var pts: Array = pair.points
+		if pts.size() < 2:
+			continue
+		var color_idx: int = int(pair.color)
+		var p_a := _make_portal(int(pts[0].x), int(pts[0].y), color_idx)
+		var p_b := _make_portal(int(pts[1].x), int(pts[1].y), color_idx)
+		p_a.partner = p_b
+		p_b.partner = p_a
+
+
+func _make_portal(col: int, row: int, color_idx: int) -> Portal:
+	var portal := Portal.new()
+	portal.position = _cell_center(col, row)
+	portal.collision_layer = 0
+	portal.collision_mask = 2  # detects the player
+
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(TILE_SIZE * 0.8, TILE_SIZE * 0.8)
+	shape.shape = rect
+	portal.add_child(shape)
+
+	var visual := ColorRect.new()
+	visual.position = Vector2(-TILE_SIZE / 2.0, -TILE_SIZE / 2.0)
+	visual.size = Vector2(TILE_SIZE, TILE_SIZE)
+	visual.color = KEY_COLORS[color_idx]
+	portal.add_child(visual)
+
+	page_root.add_child(portal)
+	return portal
+
+
+# Spawns a Gear node positioned at its home; movement, rotation, and the
+# kill-on-overlap are all driven from gear.gd. The gear's (x, y) is the
+# CENTER cell — the visual / collision circle stays centered there
+# regardless of size. The path passed to the gear is in pixel coords:
+# home cell-center first, then each waypoint cell-center.
+func _make_gear(g: Dictionary) -> void:
+	var gn: int = int(g.size)
+	var radius: float = 0.5 * gn * TILE_SIZE
+	var home := Vector2(
+			(int(g.x) + 0.5) * TILE_SIZE,
+			(int(g.y) + 0.5) * TILE_SIZE)
+
+	var path: Array = [home]
+	if g.has("waypoints"):
+		for wp in (g.waypoints as Array):
+			path.append(Vector2(
+					(int(wp.x) + 0.5) * TILE_SIZE,
+					(int(wp.y) + 0.5) * TILE_SIZE))
+
+	var gear := Gear.new()
+	gear.radius_px = radius
+	gear.speed = float(g.get("speed", 4.0)) * TILE_SIZE
+	gear.spin_speed = float(g.get("spin", 4.0))
+	gear.path = path
+	gear.closed = bool(g.get("closed", false))
+	gear.position = home
+	gear.collision_layer = 0     # not solid — passes through everything
+	gear.collision_mask = 2      # detects the player (layer 2)
+
+	var shape := CollisionShape2D.new()
+	var circle := CircleShape2D.new()
+	circle.radius = radius
+	shape.shape = circle
+	gear.add_child(shape)
+
+	page_root.add_child(gear)
 
 
 func _build_key_walls(page: Dictionary) -> void:
@@ -598,6 +752,7 @@ func _spawn_player(at: Vector2) -> void:
 	player.spawn_position = at
 	player.collision_layer = 2
 	player.collision_mask = 1
+	player.add_to_group("player")  # turrets find the player via this group
 
 	var shape := CollisionShape2D.new()
 	var rect := RectangleShape2D.new()

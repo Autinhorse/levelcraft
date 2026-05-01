@@ -30,10 +30,13 @@ const COLOR_GLASS := Color(0.55, 0.85, 1.00, 0.7)
 const COLOR_CANNON := Color(0.30, 0.30, 0.32, 1.0)
 const COLOR_CANNON_BARREL := Color(0.55, 0.55, 0.60, 1.0)
 const COLOR_CONVEYOR := Color(0.40, 0.45, 0.55, 1.0)
+const COLOR_GEAR := Color(0.70, 0.72, 0.78, 1.0)
+const COLOR_GEAR_ACCENT := Color(0.30, 0.32, 0.36, 1.0)  # darker spokes/cogs on gear
+const COLOR_GEAR_PATH := Color(0.55, 0.65, 0.85, 0.9)
 const COLOR_TOOLBAR_BG := Color(0.20, 0.21, 0.24, 1.0)
 
 enum Zoom { ONE_TO_ONE, FIT }
-enum Tool { WALL, COIN, SPIKE, GLASS, SPAWN, EXIT, TELEPORT, CANNON, CONVEYOR, SPIKE_BLOCK, KEY, ERASER }
+enum Tool { WALL, COIN, SPIKE, GLASS, SPAWN, EXIT, TELEPORT, CANNON, CONVEYOR, SPIKE_BLOCK, KEY, GEAR, PORTAL, TURRET, ERASER }
 
 const TOOL_LABELS := {
 	Tool.WALL: "Wall",
@@ -47,8 +50,14 @@ const TOOL_LABELS := {
 	Tool.CONVEYOR: "Conveyor",
 	Tool.SPIKE_BLOCK: "Spike Block",
 	Tool.KEY: "Key",
+	Tool.GEAR: "Gear",
+	Tool.PORTAL: "Portal",
+	Tool.TURRET: "Turret",
 	Tool.ERASER: "Erase",
 }
+
+# Maximum portal pairs per page; matches the 6-color KEY_COLORS palette.
+const PORTAL_MAX_PAIRS := 6
 
 # Six maximally-distinct hues. A key + its walls share a color index
 # (0..5); key uses the bright shade, key_walls use a darkened variant.
@@ -85,8 +94,20 @@ var page_size_px: Vector2 = Vector2(EDIT_W, EDIT_H)
 var level_data: Dictionary = {}
 var current_tool: Tool = Tool.WALL
 var current_page_index: int = 0
-var selected_kind: String = ""              # "", "wall", "coin", "spawn", "exit", "teleport"
+var selected_kind: String = ""              # "", "wall", "coin", "spawn", "exit", "teleport", "gear", "gear_waypoint", ...
 var selected_pos: Vector2i = Vector2i(-1, -1)
+# The gear whose chain is "active" — i.e., a click on an empty cell with the
+# GEAR tool extends this gear's path, and a click on this gear closes the
+# loop. Persists across clicks so the chain survives the _clear_selection
+# call that happens at the top of every _apply_tool_at, and so it is
+# robust to any state-derivation drift between selected_pos and gear data.
+var chain_gear: Dictionary = {}
+# The portal pair currently awaiting its second point. Set when a new pair
+# is started or when an orphan pair is selected with the PORTAL tool; the
+# next empty-cell click with the PORTAL tool fills in the missing point and
+# clears this. Cleared by _clear_selection so non-portal interactions reset
+# the workflow.
+var active_portal: Dictionary = {}
 
 var status_label: Label
 var page_label: Label
@@ -112,11 +133,41 @@ var conv_buttons: Array[Button] = []
 var current_conveyor_direction: String = "cw"
 var key_color_buttons: Array[Button] = []
 var current_key_color: int = 0
+# Gear placement defaults — also serve as the values written into the
+# parameters panel SpinBoxes when a gear is selected.
+var gear_size_input: SpinBox
+var gear_speed_input: SpinBox
+var gear_spin_input: SpinBox
+var current_gear_size: int = 2          # diameter in tiles (NxN footprint)
+var current_gear_speed: float = 4.0     # tiles per second along the path
+var current_gear_spin: float = 4.0      # radians per second of visual rotation
+# Turret defaults — tracks the player and fires bullets at intervals.
+var turret_period_input: SpinBox
+var turret_speed_input: SpinBox
+var current_turret_period: float = 2.0  # seconds between shots
+var current_turret_speed: float = 8.0   # tiles per second (bullet velocity)
+const TURRET_TRACK_SPEED := 3.0         # rad/sec — fixed turret tracking rate
 
 # Drag-paint state. Armed by a left-press that placed or erased (i.e.
 # didn't trigger selection). Cleared on left-release.
 var drag_active := false
 var last_drag_tile: Vector2i = Vector2i(-9999, -9999)
+
+# Drag-move state. Armed by a left-press that selected an existing element.
+# On release, the element moves to the cursor's tile if that tile is empty
+# and within the current page's bounds. Mutually exclusive with drag_active.
+var move_drag_active := false
+var move_drag_kind := ""
+var move_drag_from: Vector2i = Vector2i(-1, -1)
+# For NxN footprints (gears): footprint size, and the offset between the
+# cursor cell at click time and the footprint's top-left. The ghost is
+# drawn at (cursor_cell - offset) so the user's clicked cell stays under
+# the cursor while the whole footprint moves with it.
+var move_drag_size: int = 1
+var move_drag_anchor_offset: Vector2i = Vector2i.ZERO
+# Visual indicator that follows the cursor while move_drag_active is on.
+# Lives as a child of self (not page_root) so it survives _rebuild_page_visuals.
+var move_ghost: ColorRect
 
 
 func _ready() -> void:
@@ -141,6 +192,16 @@ func _build_chrome() -> void:
 
 	page_root = Node2D.new()
 	add_child(page_root)
+
+	# Move-drag ghost. Sits above page contents but below the toolbar (which
+	# is z_index 100+). Hidden until move_drag_active turns on.
+	move_ghost = ColorRect.new()
+	move_ghost.color = Color(1.0, 0.95, 0.20, 0.35)  # matches selection outline hue, semi-transparent
+	move_ghost.size = Vector2(TILE_SIZE, TILE_SIZE)
+	move_ghost.z_index = 50
+	move_ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	move_ghost.visible = false
+	add_child(move_ghost)
 
 	var tb := ColorRect.new()
 	tb.color = COLOR_TOOLBAR_BG
@@ -170,7 +231,9 @@ func _build_chrome() -> void:
 		Tool.SPAWN, Tool.EXIT,
 		Tool.TELEPORT, Tool.CANNON,
 		Tool.CONVEYOR, Tool.SPIKE_BLOCK,
-		Tool.KEY, Tool.ERASER,
+		Tool.KEY, Tool.GEAR,
+		Tool.PORTAL, Tool.TURRET,
+		Tool.ERASER,
 	]
 	var tool_col_w: float = (TOOLBAR_W - 32.0 - 8.0) / 2.0   # 180px each
 	var tool_stride: float = 40.0
@@ -325,6 +388,76 @@ func _build_chrome() -> void:
 		btn.toggled.connect(_on_conveyor_dir_toggled.bind(CONVEYOR_DIRS[i]))
 		add_child(btn)
 		conv_buttons.append(btn)
+
+	# Gear param SpinBoxes — three stacked rows (size, speed, spin), self-labeled
+	# via prefix/suffix. Same y-region as the other tool params; visibility
+	# toggled by _refresh_parameters_panel.
+	gear_size_input = SpinBox.new()
+	gear_size_input.min_value = 1
+	gear_size_input.max_value = 6
+	gear_size_input.value = current_gear_size
+	gear_size_input.step = 1
+	gear_size_input.prefix = "Size"
+	gear_size_input.suffix = "t"
+	gear_size_input.position = Vector2(EDIT_W + 16.0, y + 24.0)
+	gear_size_input.size = Vector2(TOOLBAR_W - 32.0, 28.0)
+	gear_size_input.z_index = 102
+	gear_size_input.value_changed.connect(_on_gear_size_changed)
+	add_child(gear_size_input)
+
+	gear_speed_input = SpinBox.new()
+	gear_speed_input.min_value = 0.5
+	gear_speed_input.max_value = 30.0
+	gear_speed_input.value = current_gear_speed
+	gear_speed_input.step = 0.5
+	gear_speed_input.prefix = "Speed"
+	gear_speed_input.suffix = "t/s"
+	gear_speed_input.position = Vector2(EDIT_W + 16.0, y + 56.0)
+	gear_speed_input.size = Vector2(TOOLBAR_W - 32.0, 28.0)
+	gear_speed_input.z_index = 102
+	gear_speed_input.value_changed.connect(_on_gear_speed_changed)
+	add_child(gear_speed_input)
+
+	gear_spin_input = SpinBox.new()
+	gear_spin_input.min_value = 0.0
+	gear_spin_input.max_value = 30.0
+	gear_spin_input.value = current_gear_spin
+	gear_spin_input.step = 0.5
+	gear_spin_input.prefix = "Spin"
+	gear_spin_input.suffix = "r/s"
+	gear_spin_input.position = Vector2(EDIT_W + 16.0, y + 88.0)
+	gear_spin_input.size = Vector2(TOOLBAR_W - 32.0, 28.0)
+	gear_spin_input.z_index = 102
+	gear_spin_input.value_changed.connect(_on_gear_spin_changed)
+	add_child(gear_spin_input)
+
+	# Turret SpinBoxes — period + bullet speed. Same y-region as the cannon
+	# widgets; visibility toggled by _refresh_parameters_panel.
+	turret_period_input = SpinBox.new()
+	turret_period_input.min_value = 0.1
+	turret_period_input.max_value = 30.0
+	turret_period_input.value = current_turret_period
+	turret_period_input.step = 0.1
+	turret_period_input.prefix = "Period"
+	turret_period_input.suffix = "s"
+	turret_period_input.position = Vector2(EDIT_W + 16.0, y + 24.0)
+	turret_period_input.size = Vector2(TOOLBAR_W - 32.0, 28.0)
+	turret_period_input.z_index = 102
+	turret_period_input.value_changed.connect(_on_turret_period_changed)
+	add_child(turret_period_input)
+
+	turret_speed_input = SpinBox.new()
+	turret_speed_input.min_value = 1.0
+	turret_speed_input.max_value = 50.0
+	turret_speed_input.value = current_turret_speed
+	turret_speed_input.step = 0.5
+	turret_speed_input.prefix = "Speed"
+	turret_speed_input.suffix = "t/s"
+	turret_speed_input.position = Vector2(EDIT_W + 16.0, y + 56.0)
+	turret_speed_input.size = Vector2(TOOLBAR_W - 32.0, 28.0)
+	turret_speed_input.z_index = 102
+	turret_speed_input.value_changed.connect(_on_turret_speed_changed)
+	add_child(turret_speed_input)
 
 	# Key color picker — 6 colored buttons. Active color drives placement:
 	# clicking an empty cell with the Key tool places a key if no key of
@@ -511,6 +644,10 @@ func _build_page(page_idx: int) -> void:
 		for cn in (page.cannons as Array):
 			_add_cannon(int(cn.x), int(cn.y), String(cn.dir))
 
+	if page.has("turrets"):
+		for t in (page.turrets as Array):
+			_add_turret(int(t.x), int(t.y))
+
 	if page.has("conveyors"):
 		for cv in (page.conveyors as Array):
 			_add_conveyor(int(cv.x), int(cv.y), String(cv.dir))
@@ -527,11 +664,37 @@ func _build_page(page_idx: int) -> void:
 		for k in (page.keys as Array):
 			_add_key(int(k.x), int(k.y), int(k.color))
 
+	if page.has("gears"):
+		for g in (page.gears as Array):
+			_add_gear_chain(g)
+
+	if page.has("portals"):
+		for pair in (page.portals as Array):
+			_add_portal_pair(pair)
+
 	# Selection outline (drawn last so it sits on top of every element).
+	# Gears get a (2*reach+1)² outline centered on the gear; everything
+	# else is a single tile.
 	if selected_kind != "" and selected_pos.x >= 0:
 		var outline := _SelectionOutline.new()
-		outline.position = Vector2(selected_pos.x * TILE_SIZE, selected_pos.y * TILE_SIZE)
-		outline.box_size = Vector2(TILE_SIZE, TILE_SIZE)
+		var outline_box: int = 1
+		if selected_kind == "gear":
+			# Selection_pos may be any cell within the gear's click bbox;
+			# anchor the outline on the gear's actual center cell.
+			var info_sel := _element_at(selected_pos.x, selected_pos.y)
+			if info_sel.kind == "gear":
+				var sg: Dictionary = info_sel.ref
+				var sgn: int = int(sg.size)
+				var reach: int = sgn / 2
+				outline_box = 2 * reach + 1
+				outline.position = Vector2(
+						(int(sg.x) - reach) * TILE_SIZE,
+						(int(sg.y) - reach) * TILE_SIZE)
+			else:
+				outline.position = Vector2(selected_pos.x * TILE_SIZE, selected_pos.y * TILE_SIZE)
+		else:
+			outline.position = Vector2(selected_pos.x * TILE_SIZE, selected_pos.y * TILE_SIZE)
+		outline.box_size = Vector2(outline_box * TILE_SIZE, outline_box * TILE_SIZE)
 		page_root.add_child(outline)
 
 
@@ -613,6 +776,40 @@ func _add_cannon(col: int, row: int, dir: String) -> void:
 	page_root.add_child(barrel)
 
 
+# Turret visual: cannon-style base + a centered "eye" rotor to read as
+# "rotating turret." At runtime the barrel will track the player; in the
+# editor we draw the rotor pointing up so the cell reads as a turret
+# rather than an empty block.
+func _add_turret(col: int, row: int) -> void:
+	var ts := TILE_SIZE
+	var origin := Vector2(col * ts, row * ts)
+
+	var body := ColorRect.new()
+	body.position = origin
+	body.size = Vector2(ts, ts)
+	body.color = COLOR_CANNON
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page_root.add_child(body)
+
+	# Centered "eye" — a small barrel-rect pointing up; differentiates the
+	# turret from a fixed cannon at a glance.
+	var barrel := ColorRect.new()
+	barrel.position = origin + Vector2(0.40 * ts, 0.10 * ts)
+	barrel.size = Vector2(0.20 * ts, 0.40 * ts)
+	barrel.color = COLOR_CANNON_BARREL
+	barrel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page_root.add_child(barrel)
+
+	# Center hub (slightly lighter) so the rotor visually reads as pivoting.
+	var hub := ColorRect.new()
+	var hub_size := 0.20 * ts
+	hub.position = origin + Vector2(0.40 * ts, 0.40 * ts)
+	hub.size = Vector2(hub_size, hub_size)
+	hub.color = Color(0.85, 0.85, 0.20, 1.0)  # bright yellow eye
+	hub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page_root.add_child(hub)
+
+
 # Spike-block visual: full-cell red (COLOR_SPIKE) + a small central plate
 # (COLOR_SPIKE_PLATE). Echoes the existing directional spike's plate/spike
 # split, but symmetric — visually reads as "spikes radiating out from a
@@ -668,6 +865,90 @@ func _add_conveyor(col: int, row: int, dir: String) -> void:
 	page_root.add_child(arrow)
 
 
+# Adds a single chain visualization for one gear: the gear circle, every
+# waypoint marker (with its sequence number), and the path lines (gear →
+# wp1 → wp2 → ... → wpN, plus wpN → gear if closed). The gear's (x, y) is
+# the cell where its center sits — the visual circle stays centered on
+# that cell regardless of size.
+func _add_gear_chain(gear: Dictionary) -> void:
+	var gx: int = int(gear.x)
+	var gy: int = int(gear.y)
+	var gn: int = int(gear.size)
+	var center := Vector2((gx + 0.5) * TILE_SIZE, (gy + 0.5) * TILE_SIZE)
+	var radius: float = 0.5 * gn * TILE_SIZE
+
+	var wp_centers: Array = []
+	if gear.has("waypoints"):
+		for wp in (gear.waypoints as Array):
+			wp_centers.append(Vector2(
+				(int(wp.x) + 0.5) * TILE_SIZE,
+				(int(wp.y) + 0.5) * TILE_SIZE))
+
+	var drawer := _GearChainDrawer.new()
+	drawer.gear_center = center
+	drawer.gear_radius = radius
+	drawer.waypoints = wp_centers
+	drawer.closed = bool(gear.get("closed", false))
+	drawer.path_color = COLOR_GEAR_PATH
+	drawer.fill_color = COLOR_GEAR
+	drawer.accent_color = COLOR_GEAR_ACCENT
+	drawer.waypoint_radius = TILE_SIZE * 0.18
+	page_root.add_child(drawer)
+
+	# Numbered labels for each waypoint, drawn as Label children so they
+	# inherit page_root's pan/zoom.
+	for i in wp_centers.size():
+		var label := Label.new()
+		label.text = "%d" % (i + 1)
+		var c: Vector2 = wp_centers[i]
+		label.position = Vector2(c.x - TILE_SIZE * 0.5, c.y - TILE_SIZE * 0.5)
+		label.size = Vector2(TILE_SIZE, TILE_SIZE)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.add_theme_color_override("font_color", Color.WHITE)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		page_root.add_child(label)
+
+
+# Portal pair: each point is a cell-sized colored rect; orphans render at
+# half opacity to flag "not functional yet"; complete pairs get a thin
+# connecting line between their two points so authors can see the link.
+func _add_portal_pair(pair: Dictionary) -> void:
+	var pts: Array = pair.points
+	var color_idx: int = int(pair.color)
+	var col_full: Color = KEY_COLORS[color_idx]
+	var col_orphan := Color(col_full.r, col_full.g, col_full.b, 0.5)
+	var is_complete: bool = pts.size() >= 2
+	var paint_color: Color = col_full if is_complete else col_orphan
+
+	if is_complete:
+		var p0: Dictionary = pts[0]
+		var p1: Dictionary = pts[1]
+		var line := _PortalLine.new()
+		line.from_pos = Vector2(
+				(int(p0.x) + 0.5) * TILE_SIZE,
+				(int(p0.y) + 0.5) * TILE_SIZE)
+		line.to_pos = Vector2(
+				(int(p1.x) + 0.5) * TILE_SIZE,
+				(int(p1.y) + 0.5) * TILE_SIZE)
+		line.line_color = Color(col_full.r, col_full.g, col_full.b, 0.6)
+		page_root.add_child(line)
+
+	for pt in pts:
+		_add_tile_rect(int(pt.x), int(pt.y), paint_color)
+		if not is_complete:
+			# "?" overlay so the orphan reads at a glance even at small zoom.
+			var label := Label.new()
+			label.text = "?"
+			label.position = Vector2(int(pt.x) * TILE_SIZE, int(pt.y) * TILE_SIZE)
+			label.size = Vector2(TILE_SIZE, TILE_SIZE)
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			label.add_theme_color_override("font_color", Color.WHITE)
+			label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			page_root.add_child(label)
+
+
 func _add_teleport_label(col: int, row: int, target_page: int) -> void:
 	var label := Label.new()
 	label.text = "→%d" % (target_page + 1)
@@ -713,6 +994,8 @@ func _refresh_parameters_panel() -> void:
 	var show_cannon := false     # cannon-only extras (period, speed)
 	var show_conveyor := false   # conveyor (2-way CW/CCW picker)
 	var show_key := false        # key (6-color picker)
+	var show_gear := false       # gear (size/speed/spin SpinBoxes)
+	var show_turret := false     # turret (period + bullet speed SpinBoxes)
 	if selected_kind == "teleport":
 		show_teleport = true
 	elif selected_kind == "spike":
@@ -726,6 +1009,10 @@ func _refresh_parameters_panel() -> void:
 		show_conveyor = true
 	elif selected_kind == "key" or selected_kind == "key_wall":
 		show_key = true
+	elif selected_kind == "gear" or selected_kind == "gear_waypoint":
+		show_gear = true
+	elif selected_kind == "turret":
+		show_turret = true
 	elif selected_kind == "":
 		if current_tool == Tool.TELEPORT:
 			show_teleport = true
@@ -740,6 +1027,10 @@ func _refresh_parameters_panel() -> void:
 			show_conveyor = true
 		elif current_tool == Tool.KEY:
 			show_key = true
+		elif current_tool == Tool.GEAR:
+			show_gear = true
+		elif current_tool == Tool.TURRET:
+			show_turret = true
 	tgt_label.visible = show_teleport
 	teleport_target_input.visible = show_teleport
 	dir_label.visible = show_dir or show_conveyor or show_key
@@ -757,8 +1048,13 @@ func _refresh_parameters_panel() -> void:
 	delay_input.visible = show_delay
 	period_input.visible = show_cannon
 	speed_input.visible = show_cannon
+	gear_size_input.visible = show_gear
+	gear_speed_input.visible = show_gear
+	gear_spin_input.visible = show_gear
+	turret_period_input.visible = show_turret
+	turret_speed_input.visible = show_turret
 	hint_label.visible = not (show_teleport or show_dir or show_delay \
-			or show_cannon or show_conveyor or show_key)
+			or show_cannon or show_conveyor or show_key or show_gear or show_turret)
 	# Sync the dir buttons to the right context's "current direction" — spike
 	# and cannon each track their own default.
 	if show_dir:
@@ -847,6 +1143,60 @@ func _on_cannon_speed_changed(value: float) -> void:
 			return
 
 
+# Gear param edits — when a gear (or one of its waypoints — same chain)
+# is selected, the SpinBoxes write back into that gear's data; otherwise
+# the change just updates the placement default.
+func _on_gear_size_changed(value: float) -> void:
+	current_gear_size = int(value)
+	var g := _selected_chain_gear()
+	if g.is_empty():
+		return
+	g.size = int(value)
+	_rebuild_page_visuals()
+
+
+func _on_gear_speed_changed(value: float) -> void:
+	current_gear_speed = value
+	var g := _selected_chain_gear()
+	if g.is_empty():
+		return
+	g.speed = value
+
+
+func _on_gear_spin_changed(value: float) -> void:
+	current_gear_spin = value
+	var g := _selected_chain_gear()
+	if g.is_empty():
+		return
+	g.spin = value
+
+
+func _on_turret_period_changed(value: float) -> void:
+	current_turret_period = value
+	if selected_kind != "turret":
+		return
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("turrets"):
+		return
+	for t in (page.turrets as Array):
+		if int(t.x) == selected_pos.x and int(t.y) == selected_pos.y:
+			t.period = value
+			return
+
+
+func _on_turret_speed_changed(value: float) -> void:
+	current_turret_speed = value
+	if selected_kind != "turret":
+		return
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("turrets"):
+		return
+	for t in (page.turrets as Array):
+		if int(t.x) == selected_pos.x and int(t.y) == selected_pos.y:
+			t.bullet_speed = value
+			return
+
+
 func _on_conveyor_dir_toggled(pressed: bool, dir: String) -> void:
 	if not pressed:
 		return
@@ -877,6 +1227,8 @@ func _on_key_color_toggled(pressed: bool, color_idx: int) -> void:
 func _clear_selection() -> void:
 	selected_kind = ""
 	selected_pos = Vector2i(-1, -1)
+	chain_gear = {}
+	active_portal = {}
 
 
 # Looks up what's at (col, row) on the current page. Returns kind ∈
@@ -915,6 +1267,10 @@ func _element_at(col: int, row: int) -> Dictionary:
 		for cn in (page.cannons as Array):
 			if int(cn.x) == col and int(cn.y) == row:
 				return {"kind": "cannon", "ref": cn}
+	if page.has("turrets"):
+		for t in (page.turrets as Array):
+			if int(t.x) == col and int(t.y) == row:
+				return {"kind": "turret", "ref": t}
 	if page.has("conveyors"):
 		for cv in (page.conveyors as Array):
 			if int(cv.x) == col and int(cv.y) == row:
@@ -931,10 +1287,204 @@ func _element_at(col: int, row: int) -> Dictionary:
 		for kw in (page.key_walls as Array):
 			if int(kw.x) == col and int(kw.y) == row:
 				return {"kind": "key_wall", "ref": kw}
+	# Portals: each pair has 1 or 2 points; either point selects the pair.
+	if page.has("portals"):
+		for pair in (page.portals as Array):
+			var pts: Array = pair.points
+			for i in pts.size():
+				var pt: Dictionary = pts[i]
+				if int(pt.x) == col and int(pt.y) == row:
+					return {"kind": "portal", "ref": pair, "point_index": i}
+	# Gears are anchored at the center cell (gear.x, gear.y); the visual
+	# circle (diameter `size` tiles) extends symmetrically in all directions.
+	# Cells within `reach = size / 2` of the center select the gear, giving
+	# a click area roughly matching the visual extent.
+	if page.has("gears"):
+		for g in (page.gears as Array):
+			var gx: int = int(g.x)
+			var gy: int = int(g.y)
+			var reach: int = int(g.size) / 2
+			if absi(col - gx) <= reach and absi(row - gy) <= reach:
+				return {"kind": "gear", "ref": g}
+			if g.has("waypoints"):
+				var wps: Array = g.waypoints
+				for i in wps.size():
+					var wp: Dictionary = wps[i]
+					if int(wp.x) == col and int(wp.y) == row:
+						return {"kind": "gear_waypoint", "ref": g, "wp_index": i}
 	match (tiles[row] as String).substr(col, 1):
 		"W": return {"kind": "wall"}
 		"C": return {"kind": "coin"}
 	return {"kind": "none"}
+
+
+# Moves the currently dragged element from move_drag_from to to_tile if
+# the destination is in-bounds on the current page and unoccupied. The
+# original parameters (direction, delay, target_page, color, etc.) are
+# preserved by mutating the existing entry's x/y rather than re-placing.
+# A no-op if the cursor never left the source cell, the destination is
+# off-page, or the destination cell already holds an element.
+func _complete_move(to_tile: Vector2i) -> void:
+	if to_tile == move_drag_from:
+		return
+	if level_data.is_empty():
+		return
+	var page: Dictionary = level_data.pages[current_page_index]
+	var tiles: Array = page.tiles
+	var rows: int = tiles.size()
+	var cols: int = (tiles[0] as String).length()
+
+	# Gears are center-anchored: drop position = cursor - offset gives the
+	# new center cell. Validate the (2*reach+1)² footprint around it.
+	if move_drag_kind == "gear":
+		var info_g := _element_at(move_drag_from.x, move_drag_from.y)
+		if info_g.kind != "gear":
+			return
+		var gear: Dictionary = info_g.ref
+		var reach: int = int(gear.size) / 2
+		var new_center: Vector2i = to_tile - move_drag_anchor_offset
+		if new_center.x - reach < 0 or new_center.x + reach >= cols \
+				or new_center.y - reach < 0 or new_center.y + reach >= rows:
+			return
+		# Destination footprint must be empty, except for cells the gear
+		# itself currently occupies (it can slide/overlap its own footprint).
+		for dr in range(-reach, reach + 1):
+			for dc in range(-reach, reach + 1):
+				var info := _element_at(new_center.x + dc, new_center.y + dr)
+				if info.kind == "none":
+					continue
+				if info.kind == "gear" and info.ref == gear:
+					continue
+				return
+		gear.x = new_center.x
+		gear.y = new_center.y
+		# Keep the cursor cell selected (same offset, new center) so the
+		# user can chain another move without re-clicking.
+		selected_pos = to_tile
+		chain_gear = gear
+		_rebuild_page_visuals()
+		return
+
+	if to_tile.x < 0 or to_tile.x >= cols or to_tile.y < 0 or to_tile.y >= rows:
+		return
+	if _element_at(to_tile.x, to_tile.y).kind != "none":
+		return
+
+	var from_col: int = move_drag_from.x
+	var from_row: int = move_drag_from.y
+	var to_col: int = to_tile.x
+	var to_row: int = to_tile.y
+
+	match move_drag_kind:
+		"wall":
+			_set_tile_char(from_col, from_row, ".")
+			_set_tile_char(to_col, to_row, "W")
+		"coin":
+			_set_tile_char(from_col, from_row, ".")
+			_set_tile_char(to_col, to_row, "C")
+		"spawn":
+			page.spawn = {"x": to_col, "y": to_row}
+		"exit":
+			level_data.exit.x = to_col
+			level_data.exit.y = to_row
+		"teleport":
+			_move_array_entry(page.teleports, from_col, from_row, to_col, to_row)
+		"spike":
+			_move_array_entry(page.spikes, from_col, from_row, to_col, to_row)
+		"glass":
+			_move_array_entry(page.glass_walls, from_col, from_row, to_col, to_row)
+		"cannon":
+			_move_array_entry(page.cannons, from_col, from_row, to_col, to_row)
+		"turret":
+			_move_array_entry(page.turrets, from_col, from_row, to_col, to_row)
+		"conveyor":
+			_move_array_entry(page.conveyors, from_col, from_row, to_col, to_row)
+		"spike_block":
+			_move_array_entry(page.spike_blocks, from_col, from_row, to_col, to_row)
+		"key":
+			_move_array_entry(page.keys, from_col, from_row, to_col, to_row)
+		"key_wall":
+			_move_array_entry(page.key_walls, from_col, from_row, to_col, to_row)
+		"gear_waypoint":
+			# Find which gear owns this waypoint, then update only that wp.
+			if not page.has("gears"):
+				return
+			var moved := false
+			for g in (page.gears as Array):
+				if not g.has("waypoints"):
+					continue
+				for wp in (g.waypoints as Array):
+					if int(wp.x) == from_col and int(wp.y) == from_row:
+						wp.x = to_col
+						wp.y = to_row
+						moved = true
+						break
+				if moved:
+					break
+			if not moved:
+				return
+		"portal":
+			# Find the portal pair owning this point and update just that
+			# point — its partner stays where it is.
+			if not page.has("portals"):
+				return
+			var pmoved := false
+			for pair in (page.portals as Array):
+				for pt in (pair.points as Array):
+					if int(pt.x) == from_col and int(pt.y) == from_row:
+						pt.x = to_col
+						pt.y = to_row
+						pmoved = true
+						break
+				if pmoved:
+					break
+			if not pmoved:
+				return
+		_:
+			return  # unknown kind — leave selection alone
+
+	# Selection follows the moved element so the user can chain moves
+	# without re-clicking.
+	selected_pos = Vector2i(to_col, to_row)
+	_rebuild_page_visuals()
+
+
+func _move_array_entry(arr: Array, from_col: int, from_row: int, to_col: int, to_row: int) -> void:
+	for entry in arr:
+		if int(entry.x) == from_col and int(entry.y) == from_row:
+			entry.x = to_col
+			entry.y = to_row
+			return
+
+
+# Positions the move-drag ghost at the tile under the cursor. For
+# center-anchored gears the ghost is sized (2*reach+1)² and anchored so
+# the user's clicked cell stays under the cursor: cursor - offset gives
+# the gear's new center, and the ghost extends ±reach around it. Hidden
+# when the cursor is over the toolbar or the resulting footprint would
+# extend outside the current page (also serves as a "this drop won't
+# work" cue — _complete_move no-ops in those zones too).
+func _update_move_ghost(window_pos: Vector2) -> void:
+	if not move_drag_active or window_pos.x >= EDIT_W or level_data.is_empty():
+		move_ghost.visible = false
+		return
+	var cursor_tile := _window_to_tile(window_pos)
+	var center_tile: Vector2i = cursor_tile - move_drag_anchor_offset
+	var reach: int = move_drag_size / 2
+	var box_cells: int = 2 * reach + 1
+	var top_left: Vector2i = center_tile - Vector2i(reach, reach)
+	var page: Dictionary = level_data.pages[current_page_index]
+	var tiles: Array = page.tiles
+	var rows: int = tiles.size()
+	var cols: int = (tiles[0] as String).length()
+	if top_left.x < 0 or top_left.x + box_cells > cols \
+			or top_left.y < 0 or top_left.y + box_cells > rows:
+		move_ghost.visible = false
+		return
+	move_ghost.visible = true
+	move_ghost.position = page_root.position \
+			+ Vector2(top_left.x * TILE_SIZE, top_left.y * TILE_SIZE) * page_root.scale
+	move_ghost.size = Vector2(box_cells * TILE_SIZE, box_cells * TILE_SIZE) * page_root.scale
 
 
 func _on_teleport_target_changed(value: float) -> void:
@@ -960,6 +1510,10 @@ func _input(event: InputEvent) -> void:
 				pan_active = true
 				pan_anchor_screen = mb.position
 				pan_anchor_root = page_root.position
+				# Right-press starting a pan cancels any in-progress move-drag
+				# so the user doesn't accidentally drop the element on pan end.
+				move_drag_active = false
+				move_ghost.visible = false
 			else:
 				pan_active = false
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
@@ -972,19 +1526,49 @@ func _input(event: InputEvent) -> void:
 				else:
 					var tile := _window_to_tile(mb.position)
 					var was_selection := _apply_tool_at(tile.x, tile.y)
-					if not was_selection and current_tool in DRAG_TOOLS:
+					if was_selection:
+						# Click landed on an existing element — arm move-drag.
+						# selected_kind / selected_pos were just set by
+						# _apply_tool_at to the clicked element.
+						drag_active = false
+						move_drag_active = true
+						move_drag_kind = selected_kind
+						move_drag_from = selected_pos
+						move_drag_size = 1
+						move_drag_anchor_offset = Vector2i.ZERO
+						# For gears, footprint is NxN; capture both the size
+						# and the offset of the clicked cell from the gear's
+						# top-left so the ghost (and final landing position)
+						# preserve where the cursor was within the footprint.
+						if selected_kind == "gear":
+							var info_g := _element_at(selected_pos.x, selected_pos.y)
+							if info_g.kind == "gear":
+								var sg: Dictionary = info_g.ref
+								move_drag_size = int(sg.size)
+								move_drag_anchor_offset = selected_pos \
+										- Vector2i(int(sg.x), int(sg.y))
+						_update_move_ghost(mb.position)
+					elif current_tool in DRAG_TOOLS:
 						drag_active = true
 						# Re-read the tile after the click — _apply_tool_at
 						# may have grown the page and shifted coords.
 						last_drag_tile = _window_to_tile(mb.position)
+						move_drag_active = false
 					else:
 						drag_active = false
+						move_drag_active = false
 			else:
+				if move_drag_active:
+					_complete_move(_window_to_tile(mb.position))
+					move_drag_active = false
+					move_ghost.visible = false
 				drag_active = false
 	elif event is InputEventMouseMotion:
 		var mm: InputEventMouseMotion = event
 		if pan_active:
 			page_root.position = pan_anchor_root + (mm.position - pan_anchor_screen)
+		elif move_drag_active:
+			_update_move_ghost(mm.position)
 		elif drag_active:
 			if mm.position.x >= EDIT_W:
 				return
@@ -1010,6 +1594,17 @@ func _apply_tool_at(col: int, row: int) -> bool:
 	# this to decide whether to arm drag-paint — selection should NOT drag).
 	if level_data.is_empty():
 		return false
+	# Capture the active chain BEFORE clearing selection. With the GEAR tool
+	# active, a click on the same gear closes the loop, and a click on an
+	# empty cell appends a waypoint to this gear's chain. Persistent
+	# `chain_gear` survives the _clear_selection below; if it's stale we
+	# fall back to deriving from the current selection.
+	var active_chain_gear: Dictionary = chain_gear
+	if active_chain_gear.is_empty():
+		active_chain_gear = _selected_chain_gear()
+	# Same pattern for portal pair completion: capture the half-built pair
+	# (or selected orphan) before _clear_selection wipes it.
+	var captured_portal: Dictionary = active_portal
 	# Every click starts by clearing the previous selection. If the click
 	# turns out to land on an occupied cell with a placement tool, the
 	# selection gets re-set below.
@@ -1020,17 +1615,85 @@ func _apply_tool_at(col: int, row: int) -> bool:
 	if current_tool == Tool.ERASER:
 		# Erase only removes existing elements; clicking empty is a no-op.
 		if info.kind != "none":
-			_set_tile_char(col, row, ".")
-			_clear_spawn_at(col, row)
-			_clear_exit_at(col, row)
-			_clear_teleport_at(col, row)
-			_clear_spike_at(col, row)
-			_clear_glass_at(col, row)
-			_clear_cannon_at(col, row)
-			_clear_conveyor_at(col, row)
-			_clear_spike_block_at(col, row)
-			_clear_key_at(col, row)         # cascades: also drops paired walls
-			_clear_key_wall_at(col, row)
+			# Gear / waypoint cascade: erasing either part wipes all of the
+			# chain's waypoints (gear remains for waypoint-erase, gear is also
+			# dropped for gear-erase). Handled before the per-cell clears so
+			# we operate on the gear ref, not on a single cell coord.
+			if info.kind == "gear":
+				_clear_gear(info.ref as Dictionary)
+			elif info.kind == "gear_waypoint":
+				_clear_all_waypoints(info.ref as Dictionary)
+			elif info.kind == "portal":
+				# Erasing either point of a pair drops the entire pair.
+				_clear_portal_pair(info.ref as Dictionary)
+			else:
+				_set_tile_char(col, row, ".")
+				_clear_spawn_at(col, row)
+				_clear_exit_at(col, row)
+				_clear_teleport_at(col, row)
+				_clear_spike_at(col, row)
+				_clear_glass_at(col, row)
+				_clear_cannon_at(col, row)
+				_clear_turret_at(col, row)
+				_clear_conveyor_at(col, row)
+				_clear_spike_block_at(col, row)
+				_clear_key_at(col, row)         # cascades: also drops paired walls
+				_clear_key_wall_at(col, row)
+		_refresh_parameters_panel()
+		_rebuild_page_visuals()
+		return false
+
+	# GEAR tool with an active chain: a click on that chain's own gear
+	# closes the loop; a click on any empty cell appends a waypoint. Both
+	# return false (we placed/modified, didn't select an existing element).
+	if current_tool == Tool.GEAR and not active_chain_gear.is_empty():
+		if info.kind == "gear" and info.ref == active_chain_gear:
+			# Closing requires at least one waypoint to define the loop.
+			if active_chain_gear.has("waypoints") \
+					and (active_chain_gear.waypoints as Array).size() > 0:
+				active_chain_gear.closed = true
+				_show_status("Loop closed (%d wp)" % (active_chain_gear.waypoints as Array).size())
+				# Loop closed — the chain ends here; clear the persistent ref
+				# (chain_gear was already wiped by _clear_selection above).
+				_refresh_parameters_panel()
+				_rebuild_page_visuals()
+				return false
+			# Else fall through to standard select.
+		elif info.kind == "none":
+			var grown_wp := _grow_to_include(col, row)
+			col = grown_wp.x
+			row = grown_wp.y
+			if not active_chain_gear.has("waypoints"):
+				active_chain_gear.waypoints = []
+			(active_chain_gear.waypoints as Array).append({"x": col, "y": row})
+			# Adding a waypoint after closing re-opens the loop — the closed
+			# flag describes "does the path return to the gear at the end".
+			active_chain_gear.closed = false
+			# Select the new waypoint so the next click extends the chain.
+			# Restore the persistent chain_gear (cleared by _clear_selection)
+			# so the NEXT click can also extend the chain.
+			selected_kind = "gear_waypoint"
+			selected_pos = Vector2i(col, row)
+			chain_gear = active_chain_gear
+			_refresh_parameters_panel()
+			_rebuild_page_visuals()
+			return false
+
+	# PORTAL tool with an in-progress pair: a click on an empty cell adds
+	# the missing second point and completes the pair. (Clicks on an
+	# existing portal point fall through to the standard select branch —
+	# selecting another portal switches the active pair if it is itself
+	# orphan, otherwise it just selects.)
+	if current_tool == Tool.PORTAL and not captured_portal.is_empty() \
+			and info.kind == "none":
+		var grown_pp := _grow_to_include(col, row)
+		col = grown_pp.x
+		row = grown_pp.y
+		_complete_portal_pair(captured_portal, col, row)
+		# Pair is now complete — select the freshly-placed point but do NOT
+		# restore active_portal (no further completion needed).
+		selected_kind = "portal"
+		selected_pos = Vector2i(col, row)
 		_refresh_parameters_panel()
 		_rebuild_page_visuals()
 		return false
@@ -1053,12 +1716,37 @@ func _apply_tool_at(col: int, row: int) -> bool:
 			current_cannon_speed = float(info.ref.bullet_speed)
 			period_input.set_value_no_signal(current_cannon_period)
 			speed_input.set_value_no_signal(current_cannon_speed)
+		elif selected_kind == "turret":
+			current_turret_period = float(info.ref.period)
+			current_turret_speed = float(info.ref.bullet_speed)
+			turret_period_input.set_value_no_signal(current_turret_period)
+			turret_speed_input.set_value_no_signal(current_turret_speed)
 		elif selected_kind == "conveyor":
 			current_conveyor_direction = String(info.ref.dir)
 		elif selected_kind == "key" or selected_kind == "key_wall":
 			# Selecting a key (or any of its walls) sets the active color
 			# so the user's next click naturally extends that key's set.
 			current_key_color = int(info.ref.color)
+		elif selected_kind == "gear" or selected_kind == "gear_waypoint":
+			# Sync the gear param widgets to the chain's owning gear (info.ref
+			# is the gear itself for both kinds) so edits in the panel land
+			# on it. Also re-set the persistent chain_gear so the next click
+			# extends THIS chain (was wiped by _clear_selection above).
+			var sg: Dictionary = info.ref
+			chain_gear = sg
+			current_gear_size = int(sg.size)
+			current_gear_speed = float(sg.speed)
+			current_gear_spin = float(sg.spin)
+			gear_size_input.set_value_no_signal(current_gear_size)
+			gear_speed_input.set_value_no_signal(current_gear_speed)
+			gear_spin_input.set_value_no_signal(current_gear_spin)
+		elif selected_kind == "portal":
+			# Selecting an orphan (1-point pair) re-arms active_portal so
+			# the next empty-cell click with the PORTAL tool completes it.
+			# Selecting a complete pair just shows it — no completion armed.
+			var pair: Dictionary = info.ref
+			if (pair.points as Array).size() < 2:
+				active_portal = pair
 		_refresh_parameters_panel()
 		_rebuild_page_visuals()
 		return true
@@ -1086,6 +1774,8 @@ func _apply_tool_at(col: int, row: int) -> bool:
 		Tool.CANNON:
 			_place_cannon(col, row, current_cannon_direction,
 					current_cannon_period, current_cannon_speed)
+		Tool.TURRET:
+			_place_turret(col, row, current_turret_period, current_turret_speed)
 		Tool.CONVEYOR:
 			_place_conveyor(col, row, current_conveyor_direction)
 		Tool.SPIKE_BLOCK:
@@ -1098,9 +1788,94 @@ func _apply_tool_at(col: int, row: int) -> bool:
 				_place_key_wall(col, row, current_key_color)
 			else:
 				_place_key(col, row, current_key_color)
+		Tool.GEAR:
+			# Place a new gear centered on the click cell. All cells of the
+			# (2*reach+1)² footprint must be empty (footprint may extend the
+			# page). Auto-selects the gear so the next click starts adding
+			# waypoints to its chain.
+			var center := _try_place_gear_center(col, row, current_gear_size)
+			if center.x < 0:
+				_show_status("Gear footprint blocked")
+				_refresh_parameters_panel()
+				_rebuild_page_visuals()
+				return false
+			var new_gear := _place_gear(center.x, center.y,
+					current_gear_size, current_gear_speed, current_gear_spin)
+			chain_gear = new_gear
+			selected_kind = "gear"
+			selected_pos = center
+		Tool.PORTAL:
+			# Start a new pair with the lowest free color. The next empty
+			# click with the PORTAL tool completes it; if the user clicks
+			# elsewhere (different tool, different element) the pair stays
+			# orphan and can be completed later by selecting it again.
+			var color_idx := _next_free_portal_color()
+			if color_idx < 0:
+				_show_status("Max %d portal pairs per page" % PORTAL_MAX_PAIRS)
+				_refresh_parameters_panel()
+				_rebuild_page_visuals()
+				return false
+			var new_pair := _place_portal_pair_first(col, row, color_idx)
+			active_portal = new_pair
+			selected_kind = "portal"
+			selected_pos = Vector2i(col, row)
 	_refresh_parameters_panel()
 	_rebuild_page_visuals()
 	return false
+
+
+# Returns the gear Dictionary that owns the currently selected element if
+# it is a gear or one of its waypoints, or {} otherwise. The chain context
+# this captures is what GEAR-tool clicks use to decide whether to extend
+# the chain or close the loop.
+func _selected_chain_gear() -> Dictionary:
+	if selected_kind != "gear" and selected_kind != "gear_waypoint":
+		return {}
+	if level_data.is_empty():
+		return {}
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("gears"):
+		return {}
+	for g in (page.gears as Array):
+		var gx: int = int(g.x)
+		var gy: int = int(g.y)
+		var reach: int = int(g.size) / 2
+		if selected_kind == "gear":
+			if absi(selected_pos.x - gx) <= reach \
+					and absi(selected_pos.y - gy) <= reach:
+				return g
+		else:
+			if not g.has("waypoints"):
+				continue
+			for wp in (g.waypoints as Array):
+				if int(wp.x) == selected_pos.x and int(wp.y) == selected_pos.y:
+					return g
+	return {}
+
+
+# Whether a gear of `size` tiles diameter centered on cell (col, row) can
+# be placed without overlapping any existing element. The footprint checked
+# is a (2*reach+1)² block around the center, where reach = size/2 — this
+# matches both the click-detection bbox in _element_at and the visual
+# extent of the circle. Returns the (possibly shifted) center coord on
+# success, or Vector2i(-1, -1) on failure (overlap).
+func _try_place_gear_center(col: int, row: int, size: int) -> Vector2i:
+	var reach: int = size / 2
+	# Grow upper-left first: this is the only call that can prepend rows /
+	# columns, which would shift `col`/`row`. Capture the shift and apply
+	# it to the input coords before further growth/checks.
+	var grown_min := _grow_to_include(col - reach, row - reach)
+	var shift_x: int = grown_min.x - (col - reach)
+	var shift_y: int = grown_min.y - (row - reach)
+	col += shift_x
+	row += shift_y
+	# Lower-right grow can only append; no further coord shift.
+	_grow_to_include(col + reach, row + reach)
+	for dr in range(-reach, reach + 1):
+		for dc in range(-reach, reach + 1):
+			if _element_at(col + dc, row + dr).kind != "none":
+				return Vector2i(-1, -1)
+	return Vector2i(col, row)
 
 
 # Drag-paint helper. Unlike _apply_tool_at, drag never selects, never
@@ -1263,6 +2038,10 @@ func _offset_elements(page_idx: int, dx: int, dy: int) -> void:
 		for cn in (page.cannons as Array):
 			cn.x = int(cn.x) + dx
 			cn.y = int(cn.y) + dy
+	if page.has("turrets"):
+		for t in (page.turrets as Array):
+			t.x = int(t.x) + dx
+			t.y = int(t.y) + dy
 	if page.has("conveyors"):
 		for cv in (page.conveyors as Array):
 			cv.x = int(cv.x) + dx
@@ -1279,6 +2058,19 @@ func _offset_elements(page_idx: int, dx: int, dy: int) -> void:
 		for kw in (page.key_walls as Array):
 			kw.x = int(kw.x) + dx
 			kw.y = int(kw.y) + dy
+	if page.has("gears"):
+		for g in (page.gears as Array):
+			g.x = int(g.x) + dx
+			g.y = int(g.y) + dy
+			if g.has("waypoints"):
+				for wp in (g.waypoints as Array):
+					wp.x = int(wp.x) + dx
+					wp.y = int(wp.y) + dy
+	if page.has("portals"):
+		for pair in (page.portals as Array):
+			for pt in (pair.points as Array):
+				pt.x = int(pt.x) + dx
+				pt.y = int(pt.y) + dy
 
 
 # Trims page_idx to the bbox of its placements and shifts coords to (0,0).
@@ -1349,6 +2141,14 @@ func _normalize_page(page_idx: int) -> Vector2i:
 			if cx > max_col: max_col = cx
 			if cy < min_row: min_row = cy
 			if cy > max_row: max_row = cy
+	if page.has("turrets"):
+		for t in (page.turrets as Array):
+			var tx := int(t.x)
+			var ty := int(t.y)
+			if tx < min_col: min_col = tx
+			if tx > max_col: max_col = tx
+			if ty < min_row: min_row = ty
+			if ty > max_row: max_row = ty
 	if page.has("conveyors"):
 		for cv in (page.conveyors as Array):
 			var vx := int(cv.x)
@@ -1381,6 +2181,32 @@ func _normalize_page(page_idx: int) -> Vector2i:
 			if wx > max_col: max_col = wx
 			if wy < min_row: min_row = wy
 			if wy > max_row: max_row = wy
+	if page.has("gears"):
+		for g in (page.gears as Array):
+			var ggx := int(g.x)
+			var ggy := int(g.y)
+			var greach := int(g.size) / 2
+			if ggx - greach < min_col: min_col = ggx - greach
+			if ggx + greach > max_col: max_col = ggx + greach
+			if ggy - greach < min_row: min_row = ggy - greach
+			if ggy + greach > max_row: max_row = ggy + greach
+			if g.has("waypoints"):
+				for wp in (g.waypoints as Array):
+					var wpx := int(wp.x)
+					var wpy := int(wp.y)
+					if wpx < min_col: min_col = wpx
+					if wpx > max_col: max_col = wpx
+					if wpy < min_row: min_row = wpy
+					if wpy > max_row: max_row = wpy
+	if page.has("portals"):
+		for pair in (page.portals as Array):
+			for pt in (pair.points as Array):
+				var ppx := int(pt.x)
+				var ppy := int(pt.y)
+				if ppx < min_col: min_col = ppx
+				if ppx > max_col: max_col = ppx
+				if ppy < min_row: min_row = ppy
+				if ppy > max_row: max_row = ppy
 
 	if max_col < 0:
 		page.tiles = ["."]
@@ -1504,6 +2330,29 @@ func _clear_cannon_at(col: int, row: int) -> void:
 	page.cannons = keep
 
 
+func _place_turret(col: int, row: int, period: float, bullet_speed: float) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("turrets"):
+		page.turrets = []
+	(page.turrets as Array).append({
+		"x": col, "y": row,
+		"period": period,
+		"bullet_speed": bullet_speed,
+	})
+
+
+func _clear_turret_at(col: int, row: int) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("turrets"):
+		return
+	var keep: Array = []
+	for t in (page.turrets as Array):
+		if int(t.x) == col and int(t.y) == row:
+			continue
+		keep.append(t)
+	page.turrets = keep
+
+
 func _place_conveyor(col: int, row: int, dir: String) -> void:
 	var page: Dictionary = level_data.pages[current_page_index]
 	if not page.has("conveyors"):
@@ -1564,6 +2413,96 @@ func _place_key_wall(col: int, row: int, color_idx: int) -> void:
 	if not page.has("key_walls"):
 		page.key_walls = []
 	(page.key_walls as Array).append({"x": col, "y": row, "color": color_idx})
+
+
+func _place_gear(col: int, row: int, size: int, speed: float, spin: float) -> Dictionary:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("gears"):
+		page.gears = []
+	var g := {
+		"x": col, "y": row,
+		"size": size,
+		"speed": speed,
+		"spin": spin,
+		"waypoints": [],
+		"closed": false,
+	}
+	(page.gears as Array).append(g)
+	return g
+
+
+# Drops the gear (and implicitly all of its waypoints, which live inside
+# the gear's own object) from the current page.
+func _clear_gear(gear: Dictionary) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("gears"):
+		return
+	var keep: Array = []
+	for g in (page.gears as Array):
+		if g == gear:
+			continue
+		keep.append(g)
+	page.gears = keep
+
+
+# Wipes a gear's entire waypoint list (gear remains, path resets). Used
+# by the "delete any waypoint deletes them all" rule.
+func _clear_all_waypoints(gear: Dictionary) -> void:
+	gear.waypoints = []
+	gear.closed = false
+
+
+# Returns the lowest unused color index (0..PORTAL_MAX_PAIRS-1) on the
+# current page, or -1 if all 6 pair colors are taken. Reuses the same
+# KEY_COLORS palette so the editor's color cues are consistent.
+func _next_free_portal_color() -> int:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("portals"):
+		return 0
+	var used: Dictionary = {}
+	for pair in (page.portals as Array):
+		used[int(pair.color)] = true
+	for c in PORTAL_MAX_PAIRS:
+		if not used.has(c):
+			return c
+	return -1
+
+
+# Starts a new portal pair with one point at (col, row); returns the new
+# pair Dictionary. Caller is responsible for color-budget enforcement.
+func _place_portal_pair_first(col: int, row: int, color_idx: int) -> Dictionary:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("portals"):
+		page.portals = []
+	var pair := {
+		"color": color_idx,
+		"points": [{"x": col, "y": row}],
+	}
+	(page.portals as Array).append(pair)
+	return pair
+
+
+# Adds the second point at (col, row) to the given pair, completing it.
+# No-op if the pair already has two points (defensive — should not happen
+# under normal flow).
+func _complete_portal_pair(pair: Dictionary, col: int, row: int) -> void:
+	if (pair.points as Array).size() >= 2:
+		return
+	(pair.points as Array).append({"x": col, "y": row})
+
+
+# Removes an entire portal pair (both points) from the current page. Used
+# by the eraser cascade — erasing either point deletes the whole pair.
+func _clear_portal_pair(pair: Dictionary) -> void:
+	var page: Dictionary = level_data.pages[current_page_index]
+	if not page.has("portals"):
+		return
+	var keep: Array = []
+	for p in (page.portals as Array):
+		if p == pair:
+			continue
+		keep.append(p)
+	page.portals = keep
 
 
 # Removes the key at (col, row) AND cascade-removes every key_wall sharing
@@ -1787,3 +2726,48 @@ class _GridDrawer extends Node2D:
 			draw_line(Vector2(c * tile_size, 0.0), Vector2(c * tile_size, h), line_color, 1.0)
 		for r in rows + 1:
 			draw_line(Vector2(0.0, r * tile_size), Vector2(w, r * tile_size), line_color, 1.0)
+
+
+class _PortalLine extends Node2D:
+	var from_pos: Vector2 = Vector2.ZERO
+	var to_pos: Vector2 = Vector2.ZERO
+	var line_color: Color = Color(1, 1, 1, 0.6)
+	var thickness: float = 2.0
+
+	func _draw() -> void:
+		draw_line(from_pos, to_pos, line_color, thickness)
+
+
+class _GearChainDrawer extends Node2D:
+	var gear_center: Vector2 = Vector2.ZERO
+	var gear_radius: float = 48.0
+	var waypoints: Array = []      # Array[Vector2] of px positions
+	var closed: bool = false
+	var path_color: Color = Color(0.55, 0.65, 0.85, 0.9)
+	var fill_color: Color = Color(0.70, 0.72, 0.78, 1.0)
+	var accent_color: Color = Color(0.30, 0.32, 0.36, 1.0)
+	var waypoint_radius: float = 8.0
+
+	func _draw() -> void:
+		# Path lines first so the gear / waypoint markers render on top.
+		var prev := gear_center
+		for p in waypoints:
+			draw_line(prev, p, path_color, 2.0)
+			prev = p
+		if closed and not waypoints.is_empty():
+			draw_line(waypoints[waypoints.size() - 1], gear_center, path_color, 2.0)
+
+		# Gear body: filled disc + 4 spokes (0/90/180/270) + small hub.
+		draw_circle(gear_center, gear_radius, fill_color)
+		var spoke_w := 3.0
+		var spoke_r := gear_radius * 0.85
+		for i in 4:
+			var theta := PI * 0.5 * float(i)
+			var dir := Vector2(cos(theta), sin(theta))
+			draw_line(gear_center - dir * spoke_r, gear_center + dir * spoke_r,
+					accent_color, spoke_w)
+		draw_circle(gear_center, gear_radius * 0.18, accent_color)
+
+		# Waypoint markers — small filled discs sitting at the cell center.
+		for p in waypoints:
+			draw_circle(p, waypoint_radius, path_color)

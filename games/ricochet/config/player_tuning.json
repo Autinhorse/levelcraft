@@ -5,5 +5,5 @@
   "jump_height_tiles": 2.0,
   "rebound_distance_tiles": 1.0,
   "pause_time": 0.1,
-  "death_pause": 0.5
+  "death_pause": 1.2
 }
