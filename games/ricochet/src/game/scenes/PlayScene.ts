@@ -2,46 +2,64 @@ import Phaser from 'phaser';
 
 import {
   TILE_SIZE,
-  ROOM_COLS,
-  ROOM_ROWS,
-  SPAWN_COL,
-  SPAWN_ROW,
   COLOR_WALL,
   COLOR_BACKGROUND,
   COLOR_GRID,
+  DEFAULT_LEVEL_URL,
+  DEFAULT_PAGE_INDEX,
 } from '../config/feel';
-import { Player } from '../entities/Player';
+import { Player, PlayerState } from '../entities/Player';
+import { validateLevel } from '../../shared/level-format/load';
+import type { PageData } from '../../shared/level-format/types';
 
-// Phase 2 hardcoded test room. Outer wall border + a few inner platforms
-// arranged to exercise every player state: a low ceiling for FLYING_UP
-// rebound, an isolated wall column for FLYING_H rebound on both sides,
-// and several ledges to test JUMPING / FALLING. No game elements (spikes,
-// gears, etc.) and no level loader yet — those land in later phases.
+const LEVEL_KEY = 'level-default';
+
+// Phase 3: data-driven test scene. Loads the default level JSON in
+// preload(), reads page DEFAULT_PAGE_INDEX in create(), builds walls
+// from the tile grid, spawns the player at page.spawn. The room is
+// centered horizontally in the design viewport so smaller pages
+// (Godot's default page is 25x20 = 1200x960) sit cleanly inside the
+// 1600x960 design space without ugly empty bars on one side.
+//
+// Optional element arrays (spikes, gears, portals, …) are present in the
+// loaded JSON but not yet consumed — those land in Phases 4+.
 export class PlayScene extends Phaser.Scene {
   private player!: Player;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
+  private debugText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('PlayScene');
   }
 
+  preload(): void {
+    this.load.json(LEVEL_KEY, DEFAULT_LEVEL_URL);
+  }
+
   create(): void {
     this.cameras.main.setBackgroundColor(COLOR_BACKGROUND);
-    this.drawGridBackground();
 
-    // Generate a 1-tile wall texture once; static bodies in the wall group
-    // reuse this texture, which is much cheaper than instantiating a
-    // Rectangle shape per cell.
-    if (!this.textures.exists('wall')) {
-      const gfx = this.add.graphics();
-      gfx.fillStyle(COLOR_WALL, 1);
-      gfx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-      gfx.generateTexture('wall', TILE_SIZE, TILE_SIZE);
-      gfx.destroy();
+    const raw = this.cache.json.get(LEVEL_KEY) as unknown;
+    const level = validateLevel(raw, DEFAULT_LEVEL_URL);
+    const page = level.pages[DEFAULT_PAGE_INDEX];
+    if (!page) {
+      throw new Error(`Level has no page index ${DEFAULT_PAGE_INDEX}`);
     }
 
+    const cols = page.tiles[0]!.length;
+    const rows = page.tiles.length;
+
+    // Center the room within the 1600x960 design viewport. Camera
+    // scrollX = -offsetX makes world (0,0) appear at screen (offsetX, 0).
+    const offsetX = (this.scale.gameSize.width - cols * TILE_SIZE) / 2;
+    const offsetY = (this.scale.gameSize.height - rows * TILE_SIZE) / 2;
+    this.cameras.main.setScroll(-offsetX, -offsetY);
+
+    this.drawGridBackground(cols, rows);
+    this.ensureWallTexture();
+
     this.walls = this.physics.add.staticGroup();
-    this.buildRoom();
+    this.buildWalls(page);
 
     // Input wiring — the player gets references to the cursor keys and
     // jump key so it doesn't have to reach into the scene's input plugin.
@@ -52,54 +70,55 @@ export class PlayScene extends Phaser.Scene {
     const cursors = keyboard.createCursorKeys();
     const jumpKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-    const spawnX = (SPAWN_COL + 0.5) * TILE_SIZE;
-    const spawnY = (SPAWN_ROW + 0.5) * TILE_SIZE;
+    const spawnX = (page.spawn.x + 0.5) * TILE_SIZE;
+    const spawnY = (page.spawn.y + 0.5) * TILE_SIZE;
     this.player = new Player(this, spawnX, spawnY, cursors, jumpKey);
 
     this.physics.add.collider(this.player, this.walls);
 
-    // Bottom-left help text. Drawn after walls so it sits on top.
-    this.add.text(
-      16,
-      ROOM_ROWS * TILE_SIZE - 28,
-      'Arrows: launch  |  Space: jump (arrows mid-air re-launch)  |  Phase 2 — feel test',
-      { color: '#9aa0a8', fontSize: '14px' },
-    );
+    // HUD — anchored to the screen, not the world, so it doesn't move
+    // when the camera scrolls (setScrollFactor(0) is the standard idiom).
+    this.add
+      .text(
+        16,
+        this.scale.gameSize.height - 28,
+        `${level.name}  |  Arrows: launch  |  Space: jump  |  Phase 3 — JSON loader`,
+        { color: '#9aa0a8', fontSize: '14px' },
+      )
+      .setScrollFactor(0);
+
+    this.debugText = this.add
+      .text(16, 16, '', {
+        color: '#cccccc',
+        fontSize: '14px',
+        fontFamily: 'monospace',
+      })
+      .setScrollFactor(0);
   }
 
   update(time: number, delta: number): void {
     this.player.update(time, delta);
+
+    const t = this.player.body.touching;
+    const b = this.player.body.blocked;
+    this.debugText.setText([
+      `state: ${PlayerState[this.player.state]}`,
+      `vel: (${this.player.body.velocity.x.toFixed(0)}, ${this.player.body.velocity.y.toFixed(0)})`,
+      `touching: ${t.up ? 'U' : '-'}${t.down ? 'D' : '-'}${t.left ? 'L' : '-'}${t.right ? 'R' : '-'}`,
+      `blocked:  ${b.up ? 'U' : '-'}${b.down ? 'D' : '-'}${b.left ? 'L' : '-'}${b.right ? 'R' : '-'}`,
+    ]);
   }
 
-  private buildRoom(): void {
-    // Outer border.
-    for (let c = 0; c < ROOM_COLS; c++) {
-      this.makeWall(c, 0);
-      this.makeWall(c, ROOM_ROWS - 1);
-    }
-    for (let r = 1; r < ROOM_ROWS - 1; r++) {
-      this.makeWall(0, r);
-      this.makeWall(ROOM_COLS - 1, r);
-    }
-
-    // Inner platforms — [col, row, width, height]. Carefully placed to
-    // exercise the full state machine in one screen:
-    //   - overhead ceiling: tests FLYING_UP -> PAUSED
-    //   - mid platforms: test FALLING land + JUMPING up onto
-    //   - left and right ledges: test FALLING_INPUT relaunch
-    //   - isolated wall column: tests FLYING_H rebound on both sides
-    const platforms: ReadonlyArray<readonly [number, number, number, number]> = [
-      [10, 4, 4, 1],    // overhead ceiling
-      [13, 9, 6, 1],    // mid platform
-      [3, 13, 5, 1],    // left ledge
-      [25, 12, 6, 1],   // right ledge
-      [20, 14, 1, 4],   // wall column for left-and-right rebound test
-    ];
-    for (const [col, row, width, height] of platforms) {
-      for (let c = col; c < col + width; c++) {
-        for (let r = row; r < row + height; r++) {
+  private buildWalls(page: PageData): void {
+    for (let r = 0; r < page.tiles.length; r++) {
+      const row = page.tiles[r]!;
+      for (let c = 0; c < row.length; c++) {
+        const ch = row.charAt(c);
+        if (ch === 'W') {
           this.makeWall(c, r);
         }
+        // 'C' (coin), '.' (empty), and any other chars are ignored for
+        // now — Phase 5+ will hook them into their respective builders.
       }
     }
   }
@@ -110,13 +129,22 @@ export class PlayScene extends Phaser.Scene {
     this.walls.create(x, y, 'wall');
   }
 
-  private drawGridBackground(): void {
-    // Same subtle grid as Phase 1's BootScene — gives the room a sense of
-    // scale and makes tile alignment readable.
+  private ensureWallTexture(): void {
+    if (this.textures.exists('wall')) {
+      return;
+    }
+    const gfx = this.add.graphics();
+    gfx.fillStyle(COLOR_WALL, 1);
+    gfx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    gfx.generateTexture('wall', TILE_SIZE, TILE_SIZE);
+    gfx.destroy();
+  }
+
+  private drawGridBackground(cols: number, rows: number): void {
     const gfx = this.add.graphics();
     gfx.lineStyle(1, COLOR_GRID, 0.6);
-    const w = ROOM_COLS * TILE_SIZE;
-    const h = ROOM_ROWS * TILE_SIZE;
+    const w = cols * TILE_SIZE;
+    const h = rows * TILE_SIZE;
     for (let x = 0; x <= w; x += TILE_SIZE) {
       gfx.lineBetween(x, 0, x, h);
     }

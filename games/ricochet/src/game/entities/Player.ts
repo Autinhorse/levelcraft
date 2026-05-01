@@ -34,6 +34,16 @@ const SHAPE_FULL  = { w: TILE_SIZE - 2, h: TILE_SIZE - 2 };
 const SHAPE_HMOVE = { w: TILE_SIZE - 2, h: TILE_SIZE - 4 };
 const SHAPE_VMOVE = { w: TILE_SIZE - 4, h: TILE_SIZE - 2 };
 
+// States that should be subject to engine gravity. All others use flat /
+// authored motion (we set velocity directly each frame and disable gravity
+// so the engine doesn't fight us).
+const GRAVITY_STATES = new Set<PlayerState>([
+  PlayerState.IDLE,           // gravity keeps the body pressed to the floor
+  PlayerState.JUMPING,        // gravity creates the natural arc
+  PlayerState.FALLING,
+  PlayerState.FALLING_INPUT,
+]);
+
 export class Player extends Phaser.GameObjects.Rectangle {
   // Narrow body type — set in constructor via physics.add.existing.
   declare body: Phaser.Physics.Arcade.Body;
@@ -42,12 +52,14 @@ export class Player extends Phaser.GameObjects.Rectangle {
 
   // Pixel-space tuning, cached from feel.ts at construction.
   private readonly flightSpeed: number;
-  private readonly gravity: number;
   private readonly terminalVelocity: number;
-  private readonly jumpHeight: number;
   private readonly reboundDistance: number;
   // Initial up-velocity to reach jumpHeight under gravity: v = sqrt(2 * g * h).
   private readonly jumpInitialVelocity: number;
+  // Physics step dt (fixed, NOT scene render dt). Used by REBOUNDING /
+  // RISING to compute a per-step velocity that lands exactly on target
+  // without overshoot, regardless of render frame rate.
+  private readonly physicsDt: number;
 
   // Per-state working values.
   private direction = 0;            // -1 left, 0, +1 right
@@ -77,17 +89,18 @@ export class Player extends Phaser.GameObjects.Rectangle {
 
     // Cache pixel values from tile units.
     this.flightSpeed = FLIGHT_SPEED_TILES * TILE_SIZE;
-    this.gravity = GRAVITY_TILES * TILE_SIZE;
     this.terminalVelocity = TERMINAL_VELOCITY_TILES * TILE_SIZE;
-    this.jumpHeight = JUMP_HEIGHT_TILES * TILE_SIZE;
     this.reboundDistance = REBOUND_DISTANCE_TILES * TILE_SIZE;
-    this.jumpInitialVelocity = Math.sqrt(2 * this.gravity * this.jumpHeight);
+    const gravity = GRAVITY_TILES * TILE_SIZE;
+    const jumpHeight = JUMP_HEIGHT_TILES * TILE_SIZE;
+    this.jumpInitialVelocity = Math.sqrt(2 * gravity * jumpHeight);
+    this.physicsDt = 1 / scene.physics.world.fps;
 
-    // Body setup. Manual gravity per state (matches Godot 1:1) — disable
-    // the engine's gravity here so flying states stay flat without having
-    // to fight against it every frame.
-    this.body.setAllowGravity(false);
-    this.body.setBounce(0, 0);  // hard stop on collision; rebound state handles the bounce manually
+    // Body setup. World gravity (configured in main.ts) handles the
+    // gravity arithmetic; allowGravity toggles per state. Bounce 0 so wall
+    // contact is a hard stop (the REBOUNDING state authors the visible
+    // bounce manually — Phaser bounce would interfere).
+    this.body.setBounce(0, 0);
     this.body.setMaxVelocity(this.flightSpeed * 2, this.terminalVelocity);
     this.applyShape(SHAPE_FULL);
   }
@@ -95,6 +108,7 @@ export class Player extends Phaser.GameObjects.Rectangle {
   update(_time: number, deltaMs: number): void {
     const dt = deltaMs / 1000;
     this.applyShapeForState();
+    this.applyGravityForState();
     switch (this.state) {
       case PlayerState.IDLE:          this.idle(dt); break;
       case PlayerState.RISING:        this.rising(dt); break;
@@ -112,11 +126,9 @@ export class Player extends Phaser.GameObjects.Rectangle {
   // ----- State handlers -----
 
   private idle(_dt: number): void {
-    // Tiny downward velocity keeps the body pressed into the floor each
-    // frame so body.blocked.down stays true reliably. Without it, after
-    // landing with v=(0,0), the next frame's collider may not register
-    // contact and we'd false-positive into FALLING.
-    this.body.setVelocity(0, 5);
+    // x stays zero; engine gravity handles y (presses into floor each
+    // frame, collider keeps touching.down / blocked.down set).
+    this.body.setVelocityX(0);
 
     if (!this.isOnFloor()) {
       this.state = PlayerState.FALLING;
@@ -178,12 +190,11 @@ export class Player extends Phaser.GameObjects.Rectangle {
     }
   }
 
-  private jumping(dt: number): void {
-    // Apply gravity manually; cap descent at terminal so the jump arc
-    // matches free-fall.
-    let vy = this.body.velocity.y + this.gravity * dt;
-    vy = Math.min(vy, this.terminalVelocity);
-    this.body.setVelocityY(vy);
+  private jumping(_dt: number): void {
+    // Engine gravity handles vy; we keep vx at zero unless the player
+    // cancels into a horizontal launch. maxVelocity caps the descent at
+    // terminal so the arc matches free fall.
+    this.body.setVelocityX(0);
 
     // Mid-jump arrow input cancels the arc and starts a directional launch.
     if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
@@ -210,6 +221,7 @@ export class Player extends Phaser.GameObjects.Rectangle {
     }
 
     // No directional input — natural arc.
+    const vy = this.body.velocity.y;
     if (this.isOnCeiling() && vy < 0) {
       this.body.setVelocity(0, 0);
       this.pauseTimer = PAUSE_TIME_SEC;
@@ -222,8 +234,6 @@ export class Player extends Phaser.GameObjects.Rectangle {
   }
 
   private rebounding(_dt: number): void {
-    this.body.setVelocity(this.direction * this.flightSpeed, 0);
-
     // Mid-rebound arrow input cancels the bounce-back and launches in the
     // new direction. Pressing toward the wall just hit produces a
     // bounce-bounce hover loop, which is intentional (matches Godot).
@@ -250,22 +260,41 @@ export class Player extends Phaser.GameObjects.Rectangle {
       return;
     }
 
-    let done = false;
-    // Hit another wall before completing the 1-tile rebound — stop here.
+    // Hit another wall before completing the rebound — stop here.
     if ((this.direction > 0 && this.isOnRightWall()) ||
         (this.direction < 0 && this.isOnLeftWall())) {
-      done = true;
-    } else if ((this.direction === 1 && this.x >= this.reboundTargetX) ||
-               (this.direction === -1 && this.x <= this.reboundTargetX)) {
-      this.x = this.reboundTargetX;
-      done = true;
+      this.endRebound();
+      return;
     }
-    if (done) {
-      this.body.setVelocity(0, 0);
-      this.pauseTimer = PAUSE_TIME_SEC;
-      this.postPauseState = PlayerState.FALLING_INPUT;
-      this.state = PlayerState.PAUSED;
+
+    // Distance still to travel along the rebound direction. Positive =
+    // target is ahead of us; zero or negative = at/past target.
+    const distRemaining = (this.reboundTargetX - this.x) * this.direction;
+
+    if (distRemaining <= 0) {
+      // Already at or past target. Snap (body.reset syncs body +
+      // gameObject + zeroes velocity in one call) and end.
+      this.body.reset(this.reboundTargetX, this.y);
+      this.endRebound();
+      return;
     }
+
+    // Look ahead: if a full-speed step would overshoot, slow down so the
+    // upcoming physics step lands EXACTLY on target. Uses the physics
+    // step's fixed dt (NOT scene render dt) so the math matches what the
+    // physics step will actually do, regardless of render frame rate.
+    const maxStep = this.flightSpeed * this.physicsDt;
+    const speed = distRemaining < maxStep
+      ? distRemaining / this.physicsDt
+      : this.flightSpeed;
+    this.body.setVelocity(this.direction * speed, 0);
+  }
+
+  private endRebound(): void {
+    this.body.setVelocity(0, 0);
+    this.pauseTimer = PAUSE_TIME_SEC;
+    this.postPauseState = PlayerState.FALLING_INPUT;
+    this.state = PlayerState.PAUSED;
   }
 
   private paused(dt: number): void {
@@ -277,20 +306,18 @@ export class Player extends Phaser.GameObjects.Rectangle {
     }
   }
 
-  private falling(dt: number): void {
-    let vy = this.body.velocity.y + this.gravity * dt;
-    vy = Math.min(vy, this.terminalVelocity);
-    this.body.setVelocity(0, vy);
+  private falling(_dt: number): void {
+    // Engine gravity handles vy (capped at terminal by maxVelocity). We
+    // just pin vx at zero so the body falls straight down.
+    this.body.setVelocityX(0);
     if (this.isOnFloor()) {
       this.body.setVelocity(0, 0);
       this.state = PlayerState.IDLE;
     }
   }
 
-  private fallingInput(dt: number): void {
-    let vy = this.body.velocity.y + this.gravity * dt;
-    vy = Math.min(vy, this.terminalVelocity);
-    this.body.setVelocity(0, vy);
+  private fallingInput(_dt: number): void {
+    this.body.setVelocityX(0);
 
     if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
       this.direction = -1;
@@ -327,22 +354,21 @@ export class Player extends Phaser.GameObjects.Rectangle {
     this.state = PlayerState.REBOUNDING;
   }
 
-  // Phaser's body.blocked is set when the body collides with the world
-  // bounds OR a tile; body.touching is set for two-body collisions
-  // (including static bodies). Walls in this scene are static bodies, so
-  // touching.* is the relevant signal — but blocked.* also fires in some
-  // collision arrangements, so we check both to stay robust.
+  // touching.* fires for collisions with other bodies (including static).
+  // blocked.* fires for tile / world-bounds collisions. Walls in this
+  // scene are static bodies, so touching is the load-bearing check;
+  // blocked is included for forward-compat with tilemap-backed walls.
   private isOnFloor(): boolean {
-    return this.body.blocked.down || this.body.touching.down;
+    return this.body.touching.down || this.body.blocked.down;
   }
   private isOnCeiling(): boolean {
-    return this.body.blocked.up || this.body.touching.up;
+    return this.body.touching.up || this.body.blocked.up;
   }
   private isOnLeftWall(): boolean {
-    return this.body.blocked.left || this.body.touching.left;
+    return this.body.touching.left || this.body.blocked.left;
   }
   private isOnRightWall(): boolean {
-    return this.body.blocked.right || this.body.touching.right;
+    return this.body.touching.right || this.body.blocked.right;
   }
 
   private applyShape(shape: { w: number; h: number }): void {
@@ -368,5 +394,12 @@ export class Player extends Phaser.GameObjects.Rectangle {
         target = SHAPE_FULL; break;
     }
     this.applyShape(target);
+  }
+
+  private applyGravityForState(): void {
+    const useGravity = GRAVITY_STATES.has(this.state);
+    if (this.body.allowGravity !== useGravity) {
+      this.body.setAllowGravity(useGravity);
+    }
   }
 }

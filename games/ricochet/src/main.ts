@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 
+import { GRAVITY_TILES, TILE_SIZE } from './game/config/feel';
 import { PlayScene } from './game/scenes/PlayScene';
 
 // Mirrors the Godot project's design size so Phase-2 ports can copy
@@ -16,13 +17,18 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    // Belt-and-suspenders for the FIT mode: don't let Phaser resize the
+    // #game parent to match canvas dimensions, since #game already has
+    // explicit 100vw/100vh in index.html and we want that to be authoritative.
+    expandParent: false,
   },
   physics: {
     default: 'arcade',
     arcade: {
-      // World gravity is zero — the player manages gravity manually per
-      // state to mirror the Godot reference's launch-and-stop feel.
-      gravity: { x: 0, y: 0 },
+      // World gravity is the player's gravity. The Player class toggles
+      // body.allowGravity per state so flying / paused / rebound states
+      // stay flat while falling / jumping / idle states are gravity-driven.
+      gravity: { x: 0, y: GRAVITY_TILES * TILE_SIZE },
       debug: false,
     },
   },
