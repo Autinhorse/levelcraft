@@ -26,10 +26,18 @@ export const REBOUND_DISTANCE_TILES = 0.2;    // wall-bounce backoff
 // ----- Timing (seconds) -----
 
 export const PAUSE_TIME_SEC = 0.1;            // brief delay at apex / after rebound
-// Brief immunity after dying — prevents double-deaths from overlapping
-// hazard bodies and gives the player a moment at spawn before any newly
-// reachable hazard re-kills them.
-export const DEATH_IMMUNITY_SEC = 0.5;
+// How long the death animation plays before the player respawns at spawn.
+// Long enough for the body to clearly fall off-screen + spin a few times.
+export const DEATH_PAUSE_SEC = 1.2;
+
+// ----- Death animation -----
+
+// Initial upward "pop" height (in tiles) when the player dies. Computed
+// into a velocity via sqrt(2 * gravity * height), same formula as a jump.
+export const DEATH_POP_TILES = 2.0;
+// Visual rotation rate while dying, in radians/sec. ~6 rad/s ≈ one full
+// rotation per second.
+export const DEATH_SPIN_RAD_PER_SEC = 6.0;
 
 // ----- Visuals -----
 
@@ -37,5 +45,7 @@ export const COLOR_PLAYER = 0x4ca6ff;         // sky blue (matches Godot COLOR_P
 export const COLOR_WALL = 0x73757f;           // gray (matches Godot COLOR_WALL)
 export const COLOR_SPIKE = 0xd84040;          // red (matches Godot COLOR_SPIKE)
 export const COLOR_SPIKE_PLATE = 0x73757f;    // matches wall — the spike's mounting backplate IS a wall
+export const COLOR_COIN = 0xffd933;           // bright yellow (matches Godot COLOR_COIN)
+export const COLOR_GLASS = 0x8cd9ff;          // light cyan (matches Godot COLOR_GLASS)
 export const COLOR_BACKGROUND = '#22252c';    // page background
 export const COLOR_GRID = 0x2a2f36;           // subtle grid behind everything

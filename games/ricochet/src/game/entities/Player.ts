@@ -8,7 +8,9 @@ import {
   JUMP_HEIGHT_TILES,
   REBOUND_DISTANCE_TILES,
   PAUSE_TIME_SEC,
-  DEATH_IMMUNITY_SEC,
+  DEATH_PAUSE_SEC,
+  DEATH_POP_TILES,
+  DEATH_SPIN_RAD_PER_SEC,
   COLOR_PLAYER,
 } from '../config/feel';
 
@@ -26,6 +28,7 @@ export enum PlayerState {
   PAUSED,         // brief delay before falling under gravity
   FALLING,        // gravity-driven free fall, no input
   FALLING_INPUT,  // gravity-driven fall after a fly-up ceiling bump; input accepted
+  DEAD,           // pop + spin + freefall animation; collisions disabled
 }
 
 // Per-state collision rect sizes. Narrowed by 2px on the perpendicular
@@ -43,6 +46,7 @@ const GRAVITY_STATES = new Set<PlayerState>([
   PlayerState.JUMPING,        // gravity creates the natural arc
   PlayerState.FALLING,
   PlayerState.FALLING_INPUT,
+  PlayerState.DEAD,           // gravity drives the freefall after the death pop
 ]);
 
 export class Player extends Phaser.GameObjects.Rectangle {
@@ -57,6 +61,9 @@ export class Player extends Phaser.GameObjects.Rectangle {
   private readonly reboundDistance: number;
   // Initial up-velocity to reach jumpHeight under gravity: v = sqrt(2 * g * h).
   private readonly jumpInitialVelocity: number;
+  // Same formula, applied to DEATH_POP_TILES — initial upward velocity
+  // for the death animation's "pop".
+  private readonly deathInitialVelocity: number;
   // Physics step dt (fixed, NOT scene render dt). Used by REBOUNDING /
   // RISING to compute a per-step velocity that lands exactly on target
   // without overshoot, regardless of render frame rate.
@@ -103,6 +110,7 @@ export class Player extends Phaser.GameObjects.Rectangle {
     const gravity = GRAVITY_TILES * TILE_SIZE;
     const jumpHeight = JUMP_HEIGHT_TILES * TILE_SIZE;
     this.jumpInitialVelocity = Math.sqrt(2 * gravity * jumpHeight);
+    this.deathInitialVelocity = Math.sqrt(2 * gravity * DEATH_POP_TILES * TILE_SIZE);
     this.physicsDt = 1 / scene.physics.world.fps;
 
     // Body setup. World gravity (configured in main.ts) handles the
@@ -116,9 +124,6 @@ export class Player extends Phaser.GameObjects.Rectangle {
 
   update(_time: number, deltaMs: number): void {
     const dt = deltaMs / 1000;
-    if (this.dyingTimer > 0) {
-      this.dyingTimer -= dt;
-    }
     this.applyShapeForState();
     this.applyGravityForState();
     switch (this.state) {
@@ -132,6 +137,7 @@ export class Player extends Phaser.GameObjects.Rectangle {
       case PlayerState.PAUSED:        this.paused(dt); break;
       case PlayerState.FALLING:       this.falling(dt); break;
       case PlayerState.FALLING_INPUT: this.fallingInput(dt); break;
+      case PlayerState.DEAD:          this.dead(dt); break;
     }
   }
 
@@ -360,21 +366,51 @@ export class Player extends Phaser.GameObjects.Rectangle {
 
   // ----- Public API -----
 
-  /** Hazard contact callback. Teleports the body back to spawn, resets
-   *  state, and starts a brief immunity window so multiple overlapping
-   *  hazard bodies don't fire die() repeatedly on the same death.
-   *  No-op while the immunity window is still counting down.
-   *  Phase 4 has no death animation; that lands in Phase 6. */
+  /** Hazard contact callback. Enters DEAD state: pops the body upward,
+   *  disables collisions (so it falls through floors during the
+   *  animation), and starts the death timer. Already-DEAD calls are
+   *  no-ops, which debounces multiple overlapping hazards in the same
+   *  frame. The actual respawn happens when the timer expires inside
+   *  dead(). */
   die(): void {
-    if (this.dyingTimer > 0) {
+    if (this.state === PlayerState.DEAD) {
       return;
     }
+    this.body.setVelocity(0, -this.deathInitialVelocity);
+    // Disable collisions in all directions so the body can fall through
+    // walls / floors during the death animation. Restored on respawn.
+    this.body.checkCollision.up = false;
+    this.body.checkCollision.down = false;
+    this.body.checkCollision.left = false;
+    this.body.checkCollision.right = false;
+    this.dyingTimer = DEATH_PAUSE_SEC;
+    this.state = PlayerState.DEAD;
+  }
+
+  private dead(dt: number): void {
+    // Engine gravity (DEAD is in GRAVITY_STATES) handles the freefall
+    // arc; we just spin the visual and count down.
+    this.rotation += DEATH_SPIN_RAD_PER_SEC * dt;
+    this.dyingTimer -= dt;
+    if (this.dyingTimer <= 0) {
+      this.respawn();
+    }
+  }
+
+  private respawn(): void {
+    // body.reset teleports body+gameObject + zeros velocity in one call.
     this.body.reset(this.spawnPosition.x, this.spawnPosition.y);
-    this.state = PlayerState.IDLE;
+    // Restore collisions (disabled by die()).
+    this.body.checkCollision.up = true;
+    this.body.checkCollision.down = true;
+    this.body.checkCollision.left = true;
+    this.body.checkCollision.right = true;
+    this.rotation = 0;
     this.direction = 0;
     this.pauseTimer = 0;
     this.postPauseState = PlayerState.FALLING;
-    this.dyingTimer = DEATH_IMMUNITY_SEC;
+    this.dyingTimer = 0;
+    this.state = PlayerState.IDLE;
   }
 
   // ----- Helpers -----

@@ -5,6 +5,8 @@ import {
   COLOR_WALL,
   COLOR_SPIKE,
   COLOR_SPIKE_PLATE,
+  COLOR_COIN,
+  COLOR_GLASS,
   COLOR_BACKGROUND,
   COLOR_GRID,
   DEFAULT_LEVEL_URL,
@@ -45,7 +47,19 @@ export class PlayScene extends Phaser.Scene {
   private player!: Player;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private hazards!: Phaser.Physics.Arcade.StaticGroup;
+  // Glass walls: act as walls until the player touches them, then break
+  // after their per-instance `delay` (seconds). Separate group so we can
+  // attach a per-collision callback that's not run for ordinary walls.
+  private glassWalls!: Phaser.Physics.Arcade.StaticGroup;
+  // Spike blocks: full-cell elements that BLOCK the player AND kill on
+  // contact. Separate group so a single collider+overlap pair can apply
+  // both behaviors.
+  private killableWalls!: Phaser.Physics.Arcade.StaticGroup;
+  // Coins: overlap-only (no separation). Despawn + counter on pickup.
+  private coins!: Phaser.Physics.Arcade.StaticGroup;
+  private coinCount = 0;
   private debugText!: Phaser.GameObjects.Text;
+  private hudText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('PlayScene');
@@ -79,8 +93,14 @@ export class PlayScene extends Phaser.Scene {
 
     this.walls = this.physics.add.staticGroup();
     this.hazards = this.physics.add.staticGroup();
+    this.glassWalls = this.physics.add.staticGroup();
+    this.killableWalls = this.physics.add.staticGroup();
+    this.coins = this.physics.add.staticGroup();
+    this.coinCount = 0;
     this.buildWalls(page);
     this.buildSpikes(page);
+    this.buildGlassWalls(page);
+    this.buildSpikeBlocks(page);
 
     // Input wiring — the player gets references to the cursor keys and
     // jump key so it doesn't have to reach into the scene's input plugin.
@@ -97,6 +117,22 @@ export class PlayScene extends Phaser.Scene {
 
     this.physics.add.collider(this.player, this.walls);
     this.physics.add.overlap(this.player, this.hazards, () => this.player.die());
+    // Glass walls: collide normally; the callback starts the break timer
+    // on first contact and ignores subsequent contacts until the wall
+    // self-destructs.
+    this.physics.add.collider(this.player, this.glassWalls, (_player, glass) => {
+      this.triggerGlassWall(glass as Phaser.GameObjects.GameObject);
+    });
+    // Spike blocks: collide (player physically stops) AND overlap (player
+    // dies). Both fire on contact; the death animation's collision-off
+    // takes care of the body separating cleanly afterward.
+    this.physics.add.collider(this.player, this.killableWalls);
+    this.physics.add.overlap(this.player, this.killableWalls, () => this.player.die());
+    // Coins: overlap only — no separation, player passes through.
+    this.physics.add.overlap(this.player, this.coins, (_player, coin) => {
+      coin.destroy();
+      this.coinCount += 1;
+    });
 
     // HUD — anchored to the screen, not the world, so it doesn't move
     // when the camera scrolls (setScrollFactor(0) is the standard idiom).
@@ -104,9 +140,19 @@ export class PlayScene extends Phaser.Scene {
       .text(
         16,
         this.scale.gameSize.height - 28,
-        `${level.name}  |  Arrows: launch  |  Space: jump  |  Phase 3 — JSON loader`,
+        `${level.name}  |  Arrows: launch  |  Space: jump  |  Phase 5 — coins / glass / spike-block / death anim`,
         { color: '#9aa0a8', fontSize: '14px' },
       )
+      .setScrollFactor(0);
+
+    // Coin counter — top-right.
+    this.hudText = this.add
+      .text(this.scale.gameSize.width - 16, 16, '', {
+        color: '#ffd933',
+        fontSize: '20px',
+        fontFamily: 'monospace',
+      })
+      .setOrigin(1, 0)
       .setScrollFactor(0);
 
     this.debugText = this.add
@@ -129,20 +175,38 @@ export class PlayScene extends Phaser.Scene {
       `touching: ${t.up ? 'U' : '-'}${t.down ? 'D' : '-'}${t.left ? 'L' : '-'}${t.right ? 'R' : '-'}`,
       `blocked:  ${b.up ? 'U' : '-'}${b.down ? 'D' : '-'}${b.left ? 'L' : '-'}${b.right ? 'R' : '-'}`,
     ]);
+    this.hudText.setText(`coins: ${this.coinCount}`);
   }
 
   private buildWalls(page: PageData): void {
+    // Tile-grid pass: 'W' = wall, 'C' = coin, '.' = empty. Other chars are
+    // ignored (forward-compat for future tile-char additions).
     for (let r = 0; r < page.tiles.length; r++) {
       const row = page.tiles[r]!;
       for (let c = 0; c < row.length; c++) {
         const ch = row.charAt(c);
         if (ch === 'W') {
           this.makeWall(c, r);
+        } else if (ch === 'C') {
+          this.makeCoin(c, r);
         }
-        // 'C' (coin), '.' (empty), and any other chars are ignored for
-        // now — Phase 5+ will hook them into their respective builders.
       }
     }
+  }
+
+  private makeCoin(col: number, row: number): void {
+    const x = (col + 0.5) * TILE_SIZE;
+    const y = (row + 0.5) * TILE_SIZE;
+    // Smaller than a tile so the coin reads as a pickup, not a tile.
+    const size = TILE_SIZE * 0.55;
+    const visual = this.add.rectangle(x, y, size, size, COLOR_COIN);
+    this.coins.add(visual);
+    // After group.add gives the rect a static body, sync size to the
+    // visual's actual dimensions (default body size derives from display
+    // size, but be explicit so future tweaks can't bite us).
+    const body = visual.body as Phaser.Physics.Arcade.StaticBody;
+    body.setSize(size, size);
+    body.updateFromGameObject();
   }
 
   private makeWall(col: number, row: number): void {
@@ -189,6 +253,68 @@ export class PlayScene extends Phaser.Scene {
     const body = visual.body as Phaser.Physics.Arcade.StaticBody;
     body.setSize(w, h);
     body.updateFromGameObject();
+  }
+
+  private buildGlassWalls(page: PageData): void {
+    if (!page.glass_walls) {
+      return;
+    }
+    for (const gw of page.glass_walls) {
+      this.makeGlassWall(gw.x, gw.y, gw.delay);
+    }
+  }
+
+  private makeGlassWall(col: number, row: number, delay: number): void {
+    const x = (col + 0.5) * TILE_SIZE;
+    const y = (row + 0.5) * TILE_SIZE;
+    const visual = this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_GLASS);
+    visual.setAlpha(0.55);  // semi-transparent for the "glass" look
+    this.glassWalls.add(visual);
+    visual.setData('delay', delay);
+    visual.setData('triggered', false);
+    const body = visual.body as Phaser.Physics.Arcade.StaticBody;
+    body.setSize(TILE_SIZE, TILE_SIZE);
+    body.updateFromGameObject();
+  }
+
+  // First player contact starts the break timer; subsequent contacts
+  // before destruction are no-ops. The wall keeps blocking through the
+  // delay; on expiry it just disappears (the static body + visual are
+  // destroyed together).
+  private triggerGlassWall(glass: Phaser.GameObjects.GameObject): void {
+    if (glass.getData('triggered')) {
+      return;
+    }
+    glass.setData('triggered', true);
+    const delaySec = (glass.getData('delay') as number) ?? 1.0;
+    this.time.delayedCall(delaySec * 1000, () => glass.destroy());
+  }
+
+  private buildSpikeBlocks(page: PageData): void {
+    if (!page.spike_blocks) {
+      return;
+    }
+    for (const sb of page.spike_blocks) {
+      this.makeSpikeBlock(sb.x, sb.y);
+    }
+  }
+
+  private makeSpikeBlock(col: number, row: number): void {
+    const x = (col + 0.5) * TILE_SIZE;
+    const y = (row + 0.5) * TILE_SIZE;
+    // Full-cell red — the entire footprint is lethal AND solid (block +
+    // kill). The killableWalls group has both a collider and an overlap
+    // attached.
+    const visual = this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_SPIKE);
+    this.killableWalls.add(visual);
+    const body = visual.body as Phaser.Physics.Arcade.StaticBody;
+    body.setSize(TILE_SIZE, TILE_SIZE);
+    body.updateFromGameObject();
+
+    // Decorative central plate (visual only, no body) — matches the
+    // Godot version's "spikes radiating from a central core" reading.
+    const plateSize = TILE_SIZE / 3;
+    this.add.rectangle(x, y, plateSize, plateSize, COLOR_SPIKE_PLATE);
   }
 
   private ensureWallTexture(): void {
