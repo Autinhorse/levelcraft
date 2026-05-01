@@ -9,7 +9,13 @@
   "pages": [
     {
       "cannons": [],
-      "conveyors": [],
+      "conveyors": [
+        {"x": 14, "y": 12, "dir": "cw"},
+        {"x": 15, "y": 12, "dir": "cw"},
+        {"x": 16, "y": 12, "dir": "cw"},
+        {"x": 17, "y": 12, "dir": "cw"},
+        {"x": 18, "y": 12, "dir": "cw"}
+      ],
       "gears": [],
       "glass_walls": [
         {"x": 6, "y": 17, "delay": 1.5}

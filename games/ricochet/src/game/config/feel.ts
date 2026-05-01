@@ -22,6 +22,7 @@ export const GRAVITY_TILES = 40.0;            // tiles/sec^2
 export const TERMINAL_VELOCITY_TILES = 40.0;  // fall-speed cap, tiles/sec
 export const JUMP_HEIGHT_TILES = 2.0;         // peak above the floor
 export const REBOUND_DISTANCE_TILES = 0.2;    // wall-bounce backoff
+export const CONVEYOR_SPEED_TILES = 4.0;      // horizontal push while standing on a conveyor
 
 // ----- Timing (seconds) -----
 
@@ -47,5 +48,6 @@ export const COLOR_SPIKE = 0xd84040;          // red (matches Godot COLOR_SPIKE)
 export const COLOR_SPIKE_PLATE = 0x73757f;    // matches wall — the spike's mounting backplate IS a wall
 export const COLOR_COIN = 0xffd933;           // bright yellow (matches Godot COLOR_COIN)
 export const COLOR_GLASS = 0x8cd9ff;          // light cyan (matches Godot COLOR_GLASS)
+export const COLOR_CONVEYOR = 0x666c8c;       // muted blue-gray (matches Godot COLOR_CONVEYOR)
 export const COLOR_BACKGROUND = '#22252c';    // page background
 export const COLOR_GRID = 0x2a2f36;           // subtle grid behind everything

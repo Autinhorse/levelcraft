@@ -7,12 +7,13 @@ import {
   COLOR_SPIKE_PLATE,
   COLOR_COIN,
   COLOR_GLASS,
+  COLOR_CONVEYOR,
   COLOR_BACKGROUND,
   COLOR_GRID,
   DEFAULT_LEVEL_URL,
   DEFAULT_PAGE_INDEX,
 } from '../config/feel';
-import { Player, PlayerState } from '../entities/Player';
+import { CONVEYOR_DIR_DATA_KEY, Player, PlayerState } from '../entities/Player';
 import { validateLevel } from '../../shared/level-format/load';
 import type { CardinalDir, PageData } from '../../shared/level-format/types';
 
@@ -109,6 +110,7 @@ export class PlayScene extends Phaser.Scene {
     this.buildSpikes(page);
     this.buildGlassWalls(page);
     this.buildSpikeBlocks(page);
+    this.buildConveyors(page);
 
     // Input wiring — the player gets references to the cursor keys and
     // jump key so it doesn't have to reach into the scene's input plugin.
@@ -336,6 +338,40 @@ export class PlayScene extends Phaser.Scene {
     // Godot version's "spikes radiating from a central core" reading.
     const plateSize = TILE_SIZE / 3;
     this.add.rectangle(x, y, plateSize, plateSize, COLOR_SPIKE_PLATE);
+  }
+
+  private buildConveyors(page: PageData): void {
+    if (!page.conveyors) {
+      return;
+    }
+    for (const cv of page.conveyors) {
+      this.makeConveyor(cv.x, cv.y, cv.dir === 'cw' ? 1 : -1);
+    }
+  }
+
+  // Conveyor: a wall-like static body (so the player can stand on it
+  // and it blocks horizontal flight) with a `conveyorDir` data tag the
+  // player's idle probe reads to apply horizontal push. Lives in the
+  // walls group so the existing player↔walls collider handles it.
+  private makeConveyor(col: number, row: number, dir: 1 | -1): void {
+    const x = (col + 0.5) * TILE_SIZE;
+    const y = (row + 0.5) * TILE_SIZE;
+    const visual = this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_CONVEYOR);
+    this.walls.add(visual);
+    visual.setData(CONVEYOR_DIR_DATA_KEY, dir);
+    const body = visual.body as Phaser.Physics.Arcade.StaticBody;
+    body.setSize(TILE_SIZE, TILE_SIZE);
+    body.updateFromGameObject();
+
+    // Direction arrow (visual only). Makes the push direction obvious
+    // at a glance.
+    this.add
+      .text(x, y, dir === 1 ? '→' : '←', {
+        color: '#ffffff',
+        fontSize: '24px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
   }
 
   private ensureWallTexture(): void {

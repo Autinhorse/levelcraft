@@ -7,12 +7,19 @@ import {
   TERMINAL_VELOCITY_TILES,
   JUMP_HEIGHT_TILES,
   REBOUND_DISTANCE_TILES,
+  CONVEYOR_SPEED_TILES,
   PAUSE_TIME_SEC,
   DEATH_PAUSE_SEC,
   DEATH_POP_TILES,
   DEATH_SPIN_RAD_PER_SEC,
   COLOR_PLAYER,
 } from '../config/feel';
+
+// GameObjects tagged with this data key carry a +1 (cw) or -1 (ccw)
+// number indicating the conveyor's push direction. The Player's idle
+// probe reads this from any static body just below it. Kept as a string
+// constant so the editor and PlayScene agree on the key.
+export const CONVEYOR_DIR_DATA_KEY = 'conveyorDir';
 
 // Player state machine. Mirrors the Godot version's State enum 1:1 so the
 // port can be validated by side-by-side comparison. See player.gd in
@@ -59,6 +66,7 @@ export class Player extends Phaser.GameObjects.Rectangle {
   private readonly flightSpeed: number;
   private readonly terminalVelocity: number;
   private readonly reboundDistance: number;
+  private readonly conveyorSpeed: number;
   // Initial up-velocity to reach jumpHeight under gravity: v = sqrt(2 * g * h).
   private readonly jumpInitialVelocity: number;
   // Same formula, applied to DEATH_POP_TILES — initial upward velocity
@@ -107,6 +115,7 @@ export class Player extends Phaser.GameObjects.Rectangle {
     this.flightSpeed = FLIGHT_SPEED_TILES * TILE_SIZE;
     this.terminalVelocity = TERMINAL_VELOCITY_TILES * TILE_SIZE;
     this.reboundDistance = REBOUND_DISTANCE_TILES * TILE_SIZE;
+    this.conveyorSpeed = CONVEYOR_SPEED_TILES * TILE_SIZE;
     const gravity = GRAVITY_TILES * TILE_SIZE;
     const jumpHeight = JUMP_HEIGHT_TILES * TILE_SIZE;
     this.jumpInitialVelocity = Math.sqrt(2 * gravity * jumpHeight);
@@ -144,9 +153,12 @@ export class Player extends Phaser.GameObjects.Rectangle {
   // ----- State handlers -----
 
   private idle(_dt: number): void {
-    // x stays zero; engine gravity handles y (presses into floor each
-    // frame, collider keeps touching.down / blocked.down set).
-    this.body.setVelocityX(0);
+    // Conveyor push (zero if not standing on a conveyor). x is set EVERY
+    // frame so stepping off a conveyor immediately stops the drift.
+    // Engine gravity handles y (presses into floor each frame, collider
+    // keeps touching.down / blocked.down set).
+    const conveyorDir = this.getConveyorDirBelow();
+    this.body.setVelocityX(conveyorDir * this.conveyorSpeed);
 
     if (!this.isOnFloor()) {
       this.state = PlayerState.FALLING;
@@ -162,10 +174,14 @@ export class Player extends Phaser.GameObjects.Rectangle {
       this.riseTargetY = this.y - TILE_SIZE;
       this.state = PlayerState.RISING;
     } else if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
+      // Up-launch is straight up — explicitly drop conveyor momentum.
       this.body.setVelocity(0, -this.flightSpeed);
       this.state = PlayerState.FLYING_UP;
     } else if (Phaser.Input.Keyboard.JustDown(this.jumpKey)) {
-      this.body.setVelocity(0, -this.jumpInitialVelocity);
+      // Jump preserves horizontal velocity from the conveyor (set above)
+      // so jumping off a moving belt arcs forward. setVelocityY only —
+      // don't touch vx.
+      this.body.setVelocityY(-this.jumpInitialVelocity);
       this.state = PlayerState.JUMPING;
     }
     // Down on floor: intentionally a no-op in v1, matching Godot.
@@ -209,10 +225,10 @@ export class Player extends Phaser.GameObjects.Rectangle {
   }
 
   private jumping(_dt: number): void {
-    // Engine gravity handles vy; we keep vx at zero unless the player
-    // cancels into a horizontal launch. maxVelocity caps the descent at
-    // terminal so the arc matches free fall.
-    this.body.setVelocityX(0);
+    // Engine gravity handles vy; vx is intentionally NOT zeroed so any
+    // horizontal velocity carried over from a conveyor push survives the
+    // jump (a moving player can leap forward off a belt). The mid-jump
+    // arrow-input branches below override vx when the player launches.
 
     // Mid-jump arrow input cancels the arc and starts a directional launch.
     if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
@@ -419,6 +435,35 @@ export class Player extends Phaser.GameObjects.Rectangle {
     this.reboundTargetX = this.x - this.direction * this.reboundDistance;
     this.direction = -this.direction;
     this.state = PlayerState.REBOUNDING;
+  }
+
+  // Probes a thin strip of pixels just beneath the player's body for
+  // any static body tagged with the conveyor data key, returning that
+  // body's direction (+1 right / -1 left) or 0 if no conveyor is below.
+  // physics.overlapRect uses the world's RTree, so this is fast even
+  // with many static bodies on the page. Mirrors the Godot version's
+  // 3-point physics probe (the strip is roughly equivalent to sampling
+  // at the player's left, center, and right foot-points).
+  private getConveyorDirBelow(): number {
+    const b = this.body;
+    const probeBodies = this.scene.physics.overlapRect(
+      b.x,                // left edge
+      b.y + b.height,     // just below the body
+      b.width,            // strip width = player width
+      2,                  // 2px tall strip
+      false,              // include dynamic bodies? no
+      true,               // include static bodies? yes
+    );
+    for (const body of probeBodies) {
+      const obj = body.gameObject;
+      if (obj) {
+        const dir = obj.getData(CONVEYOR_DIR_DATA_KEY);
+        if (typeof dir === 'number') {
+          return dir;
+        }
+      }
+    }
+    return 0;
   }
 
   // touching.* fires for collisions with other bodies (including static).
