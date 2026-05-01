@@ -30,6 +30,11 @@ export const PAUSE_TIME_SEC = 0.1;            // brief delay at apex / after reb
 // How long the death animation plays before the player respawns at spawn.
 // Long enough for the body to clearly fall off-screen + spin a few times.
 export const DEATH_PAUSE_SEC = 1.2;
+// After a portal teleports the player, BOTH portals in the pair disable
+// for this many seconds — prevents the player materializing inside the
+// partner from immediately ping-ponging back. 0.3s is enough for any
+// reasonable forward velocity to clear the partner's overlap area.
+export const PORTAL_COOLDOWN_SEC = 0.3;
 
 // ----- Death animation -----
 

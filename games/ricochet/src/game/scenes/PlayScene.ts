@@ -19,6 +19,7 @@ import { Bullet } from '../entities/Bullet';
 import { Cannon } from '../entities/Cannon';
 import { Gear } from '../entities/Gear';
 import { CONVEYOR_DIR_DATA_KEY, Player, PlayerState } from '../entities/Player';
+import { Portal } from '../entities/Portal';
 import { validateLevel } from '../../shared/level-format/load';
 import type { CardinalDir, PageData } from '../../shared/level-format/types';
 
@@ -88,6 +89,9 @@ export class PlayScene extends Phaser.Scene {
   // the player. Bullets pass through gears (matching Godot — gears are
   // collision_mask=2, player only).
   private gears: Gear[] = [];
+  // Portals: paired teleporters. Same "bullets pass through, only player
+  // triggers" pattern as gears. Tick ticks the cooldown timers.
+  private portals: Portal[] = [];
   private debugText!: Phaser.GameObjects.Text;
   private hudText!: Phaser.GameObjects.Text;
 
@@ -132,6 +136,7 @@ export class PlayScene extends Phaser.Scene {
     this.keys = this.add.group();
     this.keyWalls = this.physics.add.staticGroup();
     this.gears = [];
+    this.portals = [];
     this.buildWalls(page);
     this.buildSpikes(page);
     this.buildGlassWalls(page);
@@ -141,6 +146,7 @@ export class PlayScene extends Phaser.Scene {
     this.buildKeyWalls(page);
     this.buildKeys(page);
     this.buildGears(page);
+    this.buildPortals(page);
 
     // Input wiring — the player gets references to the cursor keys and
     // jump key so it doesn't have to reach into the scene's input plugin.
@@ -202,6 +208,11 @@ export class PlayScene extends Phaser.Scene {
     // the bullet wall-hit handler — bullets pass through them, mirroring
     // the Godot collision_mask=2 (player only) configuration.
     this.physics.add.overlap(this.player, this.gears, () => this.player.die());
+    // Portals: same "player only" pattern. The portal's own callback
+    // does the teleport + cooldown.
+    this.physics.add.overlap(this.player, this.portals, (_player, portal) => {
+      (portal as Portal).handlePlayerOverlap(this.player);
+    });
 
     // HUD — anchored to the screen, not the world, so it doesn't move
     // when the camera scrolls (setScrollFactor(0) is the standard idiom).
@@ -244,6 +255,9 @@ export class PlayScene extends Phaser.Scene {
     }
     for (const gear of this.gears) {
       gear.tick(dt);
+    }
+    for (const portal of this.portals) {
+      portal.tick(dt);
     }
     // Tick all live bullets (decrements ignoreTimer + lifetime).
     this.bullets.getChildren().forEach((b) => {
@@ -538,6 +552,26 @@ export class PlayScene extends Phaser.Scene {
       const wall = walls[i] as Phaser.GameObjects.Rectangle;
       if (wall.getData('color') === colorIdx) {
         wall.destroy();
+      }
+    }
+  }
+
+  private buildPortals(page: PageData): void {
+    if (!page.portals) {
+      return;
+    }
+    for (const pair of page.portals) {
+      const built: Portal[] = [];
+      for (const point of pair.points) {
+        const portal = new Portal(this, point.x, point.y, pair.color);
+        built.push(portal);
+        this.portals.push(portal);
+      }
+      // Pair completion — only fully-formed (2-point) pairs are
+      // functional; orphan singletons stay non-teleporting (partner null).
+      if (built.length === 2) {
+        built[0]!.partner = built[1]!;
+        built[1]!.partner = built[0]!;
       }
     }
   }
