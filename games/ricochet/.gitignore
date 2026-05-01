@@ -1,0 +1,11 @@
+# Phaser project — local node + build artifacts
+node_modules/
+dist/
+
+# Vite cache
+.vite/
+
+# Editor / OS
+*.local
+.DS_Store
+Thumbs.db
