@@ -55,9 +55,17 @@ export class PlayScene extends Phaser.Scene {
   // contact. Separate group so a single collider+overlap pair can apply
   // both behaviors.
   private killableWalls!: Phaser.Physics.Arcade.StaticGroup;
-  // Coins: overlap-only (no separation). Despawn + counter on pickup.
-  private coins!: Phaser.Physics.Arcade.StaticGroup;
+  // Coins: PURE VISUALS (no physics body) — pickup is checked manually
+  // each frame via AABB distance. We deliberately avoid the Phaser
+  // physics path because `physics.add.overlap` still sets the player
+  // body's `touching.left/right/up/down` flags as a side-effect even
+  // though it doesn't separate; FLYING_H reads those flags to detect
+  // walls, so a coin in the flight path would falsely trigger a rebound.
+  private coins!: Phaser.GameObjects.Group;
   private coinCount = 0;
+  // Half the player's body height + half the coin's display size; cached
+  // so the pickup loop doesn't recompute it 60 times a second.
+  private coinPickupThreshold = 0;
   private debugText!: Phaser.GameObjects.Text;
   private hudText!: Phaser.GameObjects.Text;
 
@@ -95,7 +103,7 @@ export class PlayScene extends Phaser.Scene {
     this.hazards = this.physics.add.staticGroup();
     this.glassWalls = this.physics.add.staticGroup();
     this.killableWalls = this.physics.add.staticGroup();
-    this.coins = this.physics.add.staticGroup();
+    this.coins = this.add.group();  // plain group — no physics, see field comment
     this.coinCount = 0;
     this.buildWalls(page);
     this.buildSpikes(page);
@@ -128,11 +136,10 @@ export class PlayScene extends Phaser.Scene {
     // takes care of the body separating cleanly afterward.
     this.physics.add.collider(this.player, this.killableWalls);
     this.physics.add.overlap(this.player, this.killableWalls, () => this.player.die());
-    // Coins: overlap only — no separation, player passes through.
-    this.physics.add.overlap(this.player, this.coins, (_player, coin) => {
-      coin.destroy();
-      this.coinCount += 1;
-    });
+    // (Coin pickup is handled manually in update() via distance check —
+    // see the field comment on `coins`.) Pre-compute the AABB threshold:
+    // half player width (TILE_SIZE/2) plus half coin width (0.55 * TILE_SIZE / 2).
+    this.coinPickupThreshold = TILE_SIZE * 0.5 + TILE_SIZE * 0.275;
 
     // HUD — anchored to the screen, not the world, so it doesn't move
     // when the camera scrolls (setScrollFactor(0) is the standard idiom).
@@ -166,6 +173,7 @@ export class PlayScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     this.player.update(time, delta);
+    this.checkCoinPickups();
 
     const t = this.player.body.touching;
     const b = this.player.body.blocked;
@@ -198,15 +206,28 @@ export class PlayScene extends Phaser.Scene {
     const x = (col + 0.5) * TILE_SIZE;
     const y = (row + 0.5) * TILE_SIZE;
     // Smaller than a tile so the coin reads as a pickup, not a tile.
+    // No physics body — pickup is handled by checkCoinPickups() below.
     const size = TILE_SIZE * 0.55;
     const visual = this.add.rectangle(x, y, size, size, COLOR_COIN);
     this.coins.add(visual);
-    // After group.add gives the rect a static body, sync size to the
-    // visual's actual dimensions (default body size derives from display
-    // size, but be explicit so future tweaks can't bite us).
-    const body = visual.body as Phaser.Physics.Arcade.StaticBody;
-    body.setSize(size, size);
-    body.updateFromGameObject();
+  }
+
+  // AABB-style pickup check. The player's body width is roughly TILE_SIZE
+  // (the per-state shape narrows by 2-4px on the perpendicular axis;
+  // ignoring those few pixels here doesn't matter for pickup feel).
+  private checkCoinPickups(): void {
+    const px = this.player.x;
+    const py = this.player.y;
+    const t = this.coinPickupThreshold;
+    const children = this.coins.getChildren();
+    // Iterate backwards so destroying mid-loop doesn't skip elements.
+    for (let i = children.length - 1; i >= 0; i--) {
+      const coin = children[i] as Phaser.GameObjects.Rectangle;
+      if (Math.abs(coin.x - px) < t && Math.abs(coin.y - py) < t) {
+        coin.destroy();
+        this.coinCount += 1;
+      }
+    }
   }
 
   private makeWall(col: number, row: number): void {
