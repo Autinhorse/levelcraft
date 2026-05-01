@@ -13,6 +13,8 @@ import {
   DEFAULT_LEVEL_URL,
   DEFAULT_PAGE_INDEX,
 } from '../config/feel';
+import { Bullet } from '../entities/Bullet';
+import { Cannon } from '../entities/Cannon';
 import { CONVEYOR_DIR_DATA_KEY, Player, PlayerState } from '../entities/Player';
 import { validateLevel } from '../../shared/level-format/load';
 import type { CardinalDir, PageData } from '../../shared/level-format/types';
@@ -67,6 +69,10 @@ export class PlayScene extends Phaser.Scene {
   // Half the player's body height + half the coin's display size; cached
   // so the pickup loop doesn't recompute it 60 times a second.
   private coinPickupThreshold = 0;
+  // Cannons fire on a timer; PlayScene.update ticks each one. Bullets
+  // are pooled in `bullets` and despawn on contact with anything.
+  private cannons: Cannon[] = [];
+  private bullets!: Phaser.GameObjects.Group;
   private debugText!: Phaser.GameObjects.Text;
   private hudText!: Phaser.GameObjects.Text;
 
@@ -106,11 +112,14 @@ export class PlayScene extends Phaser.Scene {
     this.killableWalls = this.physics.add.staticGroup();
     this.coins = this.add.group();  // plain group — no physics, see field comment
     this.coinCount = 0;
+    this.bullets = this.add.group();
+    this.cannons = [];
     this.buildWalls(page);
     this.buildSpikes(page);
     this.buildGlassWalls(page);
     this.buildSpikeBlocks(page);
     this.buildConveyors(page);
+    this.buildCannons(page);
 
     // Input wiring — the player gets references to the cursor keys and
     // jump key so it doesn't have to reach into the scene's input plugin.
@@ -142,6 +151,26 @@ export class PlayScene extends Phaser.Scene {
     // see the field comment on `coins`.) Pre-compute the AABB threshold:
     // half player width (TILE_SIZE/2) plus half coin width (0.55 * TILE_SIZE / 2).
     this.coinPickupThreshold = TILE_SIZE * 0.5 + TILE_SIZE * 0.275;
+
+    // Bullets despawn on contact with anything wall-like. The same callback
+    // handles all wall-like groups; the per-bullet `ignoreBody`/`ignoreTimer`
+    // pattern lets future shooters (turrets) exempt themselves at oblique
+    // firing angles. Cannons fire perpendicular so they never set ignoreBody.
+    const handleBulletWallHit: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (bullet, wall) => {
+      const b = bullet as unknown as Bullet;
+      if (!b.active) return;  // already destroyed (multi-overlap same frame)
+      if (b.ignoreBody === (wall as unknown as Phaser.GameObjects.GameObject) && b.ignoreTimer > 0) return;
+      b.destroy();
+    };
+    this.physics.add.overlap(this.bullets, this.walls, handleBulletWallHit);
+    this.physics.add.overlap(this.bullets, this.glassWalls, handleBulletWallHit);
+    this.physics.add.overlap(this.bullets, this.killableWalls, handleBulletWallHit);
+    this.physics.add.overlap(this.bullets, this.hazards, handleBulletWallHit);
+    // Bullet vs player: kill + despawn.
+    this.physics.add.overlap(this.player, this.bullets, (_player, bullet) => {
+      this.player.die();
+      bullet.destroy();
+    });
 
     // HUD — anchored to the screen, not the world, so it doesn't move
     // when the camera scrolls (setScrollFactor(0) is the standard idiom).
@@ -176,6 +205,16 @@ export class PlayScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.player.update(time, delta);
     this.checkCoinPickups();
+
+    const dt = delta / 1000;
+    for (const cannon of this.cannons) {
+      cannon.tick(dt);
+    }
+    // Tick all live bullets (decrements ignoreTimer + lifetime).
+    this.bullets.getChildren().forEach((b) => {
+      const bullet = b as Bullet;
+      if (bullet.active) bullet.tick(dt);
+    });
 
     const t = this.player.body.touching;
     const b = this.player.body.blocked;
@@ -372,6 +411,27 @@ export class PlayScene extends Phaser.Scene {
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
+  }
+
+  private buildCannons(page: PageData): void {
+    if (!page.cannons) {
+      return;
+    }
+    for (const c of page.cannons) {
+      const cannon = new Cannon(
+        this,
+        c.x,
+        c.y,
+        c.dir,
+        c.period,
+        c.bullet_speed,
+        this.bullets,
+      );
+      // Add to the walls group so the existing player↔walls collider
+      // physically blocks the player against the cannon's cell.
+      this.walls.add(cannon);
+      this.cannons.push(cannon);
+    }
   }
 
   private ensureWallTexture(): void {
