@@ -60,7 +60,13 @@
         "y": 18
       },
       "spike_blocks": [],
-      "spikes": [],
+      "spikes": [
+        {"x": 5, "y": 18, "dir": "up"},
+        {"x": 17, "y": 18, "dir": "up"},
+        {"x": 8, "y": 1, "dir": "down"},
+        {"x": 1, "y": 10, "dir": "right"},
+        {"x": 23, "y": 10, "dir": "left"}
+      ],
       "teleports": [],
       "tiles": [
         "WWWWWWWWWWWWWWWWWWWWWWWWW",

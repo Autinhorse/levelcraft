@@ -8,6 +8,7 @@ import {
   JUMP_HEIGHT_TILES,
   REBOUND_DISTANCE_TILES,
   PAUSE_TIME_SEC,
+  DEATH_IMMUNITY_SEC,
   COLOR_PLAYER,
 } from '../config/feel';
 
@@ -67,6 +68,13 @@ export class Player extends Phaser.GameObjects.Rectangle {
   private reboundTargetX = 0;       // x-coord to stop the rebound at
   private pauseTimer = 0;
   private postPauseState: PlayerState = PlayerState.FALLING;
+  // Brief immunity after dying — debounces double-deaths from multiple
+  // overlapping hazard bodies in the same frame, and gives the player a
+  // moment at spawn before any spawn-adjacent hazard re-kills them.
+  private dyingTimer = 0;
+  // Original spawn coordinates, captured at construction. die() teleports
+  // the body back here.
+  private readonly spawnPosition: Phaser.Math.Vector2;
 
   // Input refs — passed in by PlayScene so the player doesn't reach into
   // the scene's input plugin directly.
@@ -86,6 +94,7 @@ export class Player extends Phaser.GameObjects.Rectangle {
 
     this.cursors = cursors;
     this.jumpKey = jumpKey;
+    this.spawnPosition = new Phaser.Math.Vector2(x, y);
 
     // Cache pixel values from tile units.
     this.flightSpeed = FLIGHT_SPEED_TILES * TILE_SIZE;
@@ -107,6 +116,9 @@ export class Player extends Phaser.GameObjects.Rectangle {
 
   update(_time: number, deltaMs: number): void {
     const dt = deltaMs / 1000;
+    if (this.dyingTimer > 0) {
+      this.dyingTimer -= dt;
+    }
     this.applyShapeForState();
     this.applyGravityForState();
     switch (this.state) {
@@ -344,6 +356,25 @@ export class Player extends Phaser.GameObjects.Rectangle {
       this.body.setVelocity(0, 0);
       this.state = PlayerState.IDLE;
     }
+  }
+
+  // ----- Public API -----
+
+  /** Hazard contact callback. Teleports the body back to spawn, resets
+   *  state, and starts a brief immunity window so multiple overlapping
+   *  hazard bodies don't fire die() repeatedly on the same death.
+   *  No-op while the immunity window is still counting down.
+   *  Phase 4 has no death animation; that lands in Phase 6. */
+  die(): void {
+    if (this.dyingTimer > 0) {
+      return;
+    }
+    this.body.reset(this.spawnPosition.x, this.spawnPosition.y);
+    this.state = PlayerState.IDLE;
+    this.direction = 0;
+    this.pauseTimer = 0;
+    this.postPauseState = PlayerState.FALLING;
+    this.dyingTimer = DEATH_IMMUNITY_SEC;
   }
 
   // ----- Helpers -----

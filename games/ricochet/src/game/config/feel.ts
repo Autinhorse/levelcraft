@@ -26,10 +26,16 @@ export const REBOUND_DISTANCE_TILES = 0.2;    // wall-bounce backoff
 // ----- Timing (seconds) -----
 
 export const PAUSE_TIME_SEC = 0.1;            // brief delay at apex / after rebound
+// Brief immunity after dying — prevents double-deaths from overlapping
+// hazard bodies and gives the player a moment at spawn before any newly
+// reachable hazard re-kills them.
+export const DEATH_IMMUNITY_SEC = 0.5;
 
 // ----- Visuals -----
 
 export const COLOR_PLAYER = 0x4ca6ff;         // sky blue (matches Godot COLOR_PLAYER)
 export const COLOR_WALL = 0x73757f;           // gray (matches Godot COLOR_WALL)
+export const COLOR_SPIKE = 0xd84040;          // red (matches Godot COLOR_SPIKE)
+export const COLOR_SPIKE_PLATE = 0x73757f;    // matches wall — the spike's mounting backplate IS a wall
 export const COLOR_BACKGROUND = '#22252c';    // page background
 export const COLOR_GRID = 0x2a2f36;           // subtle grid behind everything

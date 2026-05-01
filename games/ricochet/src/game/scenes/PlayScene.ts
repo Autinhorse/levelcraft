@@ -3,6 +3,8 @@ import Phaser from 'phaser';
 import {
   TILE_SIZE,
   COLOR_WALL,
+  COLOR_SPIKE,
+  COLOR_SPIKE_PLATE,
   COLOR_BACKGROUND,
   COLOR_GRID,
   DEFAULT_LEVEL_URL,
@@ -10,7 +12,23 @@ import {
 } from '../config/feel';
 import { Player, PlayerState } from '../entities/Player';
 import { validateLevel } from '../../shared/level-format/load';
-import type { PageData } from '../../shared/level-format/types';
+import type { CardinalDir, PageData } from '../../shared/level-format/types';
+
+// Spike rect layout per direction. Each cell splits into:
+//   - A "plate" (wall — blocks the player, mounts the spikes)
+//   - A "spike" (hazard — kills the player on overlap)
+//   - Air (the open side the spikes point into)
+// Coords are fractions of TILE_SIZE, origin at the cell's top-left. The
+// plate's solid body is added first; the spike's hazard body sits on top
+// (visually + collision-wise). For 'up' the lethal points stick UP into
+// the cell's top-air; for 'right' they stick RIGHT, etc.
+type Rect = { x: number; y: number; w: number; h: number };
+const SPIKE_LAYOUT: Record<CardinalDir, { plate: Rect; spike: Rect }> = {
+  up:    { plate: { x: 0,   y: 0.8, w: 1,   h: 0.2 }, spike: { x: 0,   y: 0.4, w: 1,   h: 0.4 } },
+  down:  { plate: { x: 0,   y: 0,   w: 1,   h: 0.2 }, spike: { x: 0,   y: 0.2, w: 1,   h: 0.4 } },
+  left:  { plate: { x: 0.8, y: 0,   w: 0.2, h: 1   }, spike: { x: 0.4, y: 0,   w: 0.4, h: 1   } },
+  right: { plate: { x: 0,   y: 0,   w: 0.2, h: 1   }, spike: { x: 0,   y: 0,   w: 0.4, h: 1   } },
+};
 
 const LEVEL_KEY = 'level-default';
 
@@ -26,6 +44,7 @@ const LEVEL_KEY = 'level-default';
 export class PlayScene extends Phaser.Scene {
   private player!: Player;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
+  private hazards!: Phaser.Physics.Arcade.StaticGroup;
   private debugText!: Phaser.GameObjects.Text;
 
   constructor() {
@@ -59,7 +78,9 @@ export class PlayScene extends Phaser.Scene {
     this.ensureWallTexture();
 
     this.walls = this.physics.add.staticGroup();
+    this.hazards = this.physics.add.staticGroup();
     this.buildWalls(page);
+    this.buildSpikes(page);
 
     // Input wiring — the player gets references to the cursor keys and
     // jump key so it doesn't have to reach into the scene's input plugin.
@@ -75,6 +96,7 @@ export class PlayScene extends Phaser.Scene {
     this.player = new Player(this, spawnX, spawnY, cursors, jumpKey);
 
     this.physics.add.collider(this.player, this.walls);
+    this.physics.add.overlap(this.player, this.hazards, () => this.player.die());
 
     // HUD — anchored to the screen, not the world, so it doesn't move
     // when the camera scrolls (setScrollFactor(0) is the standard idiom).
@@ -127,6 +149,46 @@ export class PlayScene extends Phaser.Scene {
     const x = (col + 0.5) * TILE_SIZE;
     const y = (row + 0.5) * TILE_SIZE;
     this.walls.create(x, y, 'wall');
+  }
+
+  private buildSpikes(page: PageData): void {
+    if (!page.spikes) {
+      return;
+    }
+    for (const spike of page.spikes) {
+      this.makeSpike(spike.x, spike.y, spike.dir);
+    }
+  }
+
+  private makeSpike(col: number, row: number, dir: CardinalDir): void {
+    const layout = SPIKE_LAYOUT[dir];
+    // Plate first (visually beneath the spike where they overlap), spike on top.
+    this.makeSpikePart(col, row, layout.plate, COLOR_SPIKE_PLATE, /* hazard= */ false);
+    this.makeSpikePart(col, row, layout.spike, COLOR_SPIKE, /* hazard= */ true);
+  }
+
+  private makeSpikePart(
+    col: number,
+    row: number,
+    rect: Rect,
+    color: number,
+    hazard: boolean,
+  ): void {
+    const w = rect.w * TILE_SIZE;
+    const h = rect.h * TILE_SIZE;
+    const x = col * TILE_SIZE + rect.x * TILE_SIZE + w / 2;
+    const y = row * TILE_SIZE + rect.y * TILE_SIZE + h / 2;
+
+    const visual = this.add.rectangle(x, y, w, h, color);
+    const group = hazard ? this.hazards : this.walls;
+    group.add(visual);
+    // After group.add gives the rect a static body, sync the body's size
+    // to the rect's actual dimensions (default static body uses display
+    // size — usually fine, but be explicit so future layout changes can't
+    // bite us).
+    const body = visual.body as Phaser.Physics.Arcade.StaticBody;
+    body.setSize(w, h);
+    body.updateFromGameObject();
   }
 
   private ensureWallTexture(): void {
