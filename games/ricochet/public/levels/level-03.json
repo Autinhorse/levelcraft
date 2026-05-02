@@ -2,36 +2,422 @@
   "id": "level-03",
   "name": "Level 3",
   "exit": {
-    "page": 0,
-    "x": 28,
-    "y": 16
+    "page": 1,
+    "x": 24,
+    "y": 2
   },
   "pages": [
     {
       "tiles": [
+        "WWWWWWWWWWW...WWWWWWWWWWWWWWWW",
+        "W.........W...W..............W",
+        "W.........W...W.C......C.C...W",
+        "W.........W...W..............W",
+        "W...WWW...W...W.C.WWWWWWWWWWWW",
+        "W...W.W...W...W...W..........W",
+        "W...WWW...W...W.C.WWWWWWWWWWWW",
+        "W...W.....W...W..............W",
+        "W...W.....W...W.C.C.C..CCCC..W",
+        "W...W.....W...W..............W",
+        "WWWWWWWWWWW...WWWWWWWWWWWWWWWW",
+        ".............................W",
         "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
         "W............................W",
         "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
+        "W..C.C.C.C.C.C.C.C.C.C.C.C...W",
         "W............................W",
         "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
       ],
       "spawn": {
-        "x": 1,
-        "y": 16
-      }
+        "x": 8,
+        "y": 2
+      },
+      "spikes": [
+        {
+          "x": 1,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 2,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 3,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 4,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 5,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 6,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 7,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 8,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 9,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 10,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 11,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 12,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 13,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 14,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 15,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 16,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 17,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 18,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 19,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 20,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 21,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 22,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 23,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 24,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 25,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 26,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 27,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 28,
+          "y": 13,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        }
+      ],
+      "keys": [
+        {
+          "x": 2,
+          "y": 8,
+          "color": 1
+        }
+      ],
+      "key_walls": [
+        {
+          "x": 6,
+          "y": 7,
+          "color": 1
+        },
+        {
+          "x": 6,
+          "y": 8,
+          "color": 1
+        },
+        {
+          "x": 6,
+          "y": 9,
+          "color": 1
+        }
+      ],
+      "glass_walls": [
+        {
+          "x": 18,
+          "y": 1,
+          "delay": 1
+        },
+        {
+          "x": 18,
+          "y": 2,
+          "delay": 1
+        },
+        {
+          "x": 18,
+          "y": 3,
+          "delay": 1
+        },
+        {
+          "x": 21,
+          "y": 1,
+          "delay": 1
+        },
+        {
+          "x": 21,
+          "y": 2,
+          "delay": 1
+        },
+        {
+          "x": 21,
+          "y": 3,
+          "delay": 1
+        },
+        {
+          "x": 21,
+          "y": 7,
+          "delay": 1
+        },
+        {
+          "x": 21,
+          "y": 8,
+          "delay": 1
+        },
+        {
+          "x": 21,
+          "y": 9,
+          "delay": 1
+        }
+      ],
+      "portals": [
+        {
+          "color": 0,
+          "points": [
+            {
+              "x": 5,
+              "y": 8
+            },
+            {
+              "x": 27,
+              "y": 8
+            }
+          ]
+        },
+        {
+          "color": 1,
+          "points": [
+            {
+              "x": 27,
+              "y": 2
+            },
+            {
+              "x": 2,
+              "y": 15
+            }
+          ]
+        }
+      ],
+      "teleports": [
+        {
+          "x": 27,
+          "y": 15,
+          "target_page": 1
+        }
+      ]
+    },
+    {
+      "tiles": [
+        "WWWWWWWWWWWWW.WWWWWWWWWWWWW...",
+        "W...........W.W...........W...",
+        "W.C.C.C.C...W.W.C.........W...",
+        "W...........W.W...........W...",
+        "W.C.WWWWWWWWW.W.C.WWWWWWWWW...",
+        "W...W.......W.W...W...W...W...",
+        "W.C.W.C.C.C.W.W.C.W...W...W...",
+        "W...W.......W.W...W...W...W...",
+        "W.C.W.C.W.C.W.W.C.W.C.W...W...",
+        "W...W...W...W.W...W...W...W...",
+        "W.C.W...W.C.W.W.C.W.C.W...W...",
+        "W...W...W...W.W...W...W...W...",
+        "W.C.WWWWW.C.W.W.C.W.C.W...W...",
+        "W...........W.W...........W...",
+        "W.C.C.C.C.C.W.W.C.C.C.C.C.W...",
+        "W...........W.W...........W...",
+        "WWWWWWWWWWWWW.WWWWWWWWWWWWW...",
+        ".............................."
+      ],
+      "spawn": {
+        "x": 10,
+        "y": 2
+      },
+      "portals": [
+        {
+          "color": 1,
+          "points": [
+            {
+              "x": 6,
+              "y": 10
+            },
+            {
+              "x": 20,
+              "y": 6
+            }
+          ]
+        }
+      ],
+      "glass_walls": [
+        {
+          "x": 23,
+          "y": 12,
+          "delay": 1
+        },
+        {
+          "x": 24,
+          "y": 12,
+          "delay": 1
+        },
+        {
+          "x": 25,
+          "y": 12,
+          "delay": 1
+        }
+      ],
+      "keys": [
+        {
+          "x": 24,
+          "y": 6,
+          "color": 2
+        }
+      ],
+      "key_walls": [
+        {
+          "x": 18,
+          "y": 1,
+          "color": 2
+        },
+        {
+          "x": 18,
+          "y": 2,
+          "color": 2
+        },
+        {
+          "x": 18,
+          "y": 3,
+          "color": 2
+        }
+      ]
     }
   ]
 }

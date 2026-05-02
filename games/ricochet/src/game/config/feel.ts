@@ -21,7 +21,11 @@ export const FLIGHT_SPEED_TILES = 40.0;       // every directed launch
 export const GRAVITY_TILES = 40.0;            // tiles/sec^2
 export const TERMINAL_VELOCITY_TILES = 40.0;  // fall-speed cap, tiles/sec
 export const JUMP_HEIGHT_TILES = 2.0;         // peak above the floor
-export const REBOUND_DISTANCE_TILES = 0.2;    // wall-bounce backoff
+// Vertical lift on left/right launches from the floor. Player rises
+// this much (constant-velocity, no gravity) before transitioning to
+// horizontal flight. Originally 1 tile; halved per playtesting.
+export const RISE_LIFT_TILES = 0.2;
+export const REBOUND_DISTANCE_TILES = 0.5;    // wall-bounce backoff
 export const CONVEYOR_SPEED_TILES = 4.0;      // horizontal push while standing on a conveyor
 export const TURRET_TRACK_SPEED = 3.0;        // rad/sec — how fast the turret barrel rotates toward the player
 

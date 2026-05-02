@@ -46,7 +46,8 @@ export class MenuScene extends Phaser.Scene {
     overlay.innerHTML = `
       <div class="menu-content">
         <h1 class="menu-title">LevelCraft: Ricochet</h1>
-        <p class="menu-subtitle">Select a level to edit</p>
+        <button data-action="play-campaign" class="menu-play-btn">▶ Play All Levels</button>
+        <p class="menu-subtitle">or pick a level to edit</p>
         <div class="menu-grid">${buttons}</div>
       </div>
     `;
@@ -57,6 +58,13 @@ export class MenuScene extends Phaser.Scene {
 
   private onOverlayClick(ev: MouseEvent): void {
     const target = ev.target as HTMLElement;
+    const action = target.getAttribute('data-action');
+    if (action === 'play-campaign') {
+      // Boot campaign mode at Level 1 — PlayScene reads `campaignLevel`
+      // and threads it through cross-page transitions / Next-Level.
+      this.scene.start('PlayScene', { campaignLevel: 1 });
+      return;
+    }
     const lvl = target.getAttribute('data-level');
     if (!lvl) return;
     this.scene.start('EditScene', { levelPath: `levels/level-${lvl}.json` });

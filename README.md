@@ -69,7 +69,7 @@ Wish me luck.
 * [**001:** Day 1 - The First 3 Hours of Ricochet ](./games/ricochet/devlogs/en/001.Day%201%20-%20The%20first%20three%20hours%20of%20Ricochet.md)
 * [**002:** Day 2 - Core Mechanics & Editor Foundations ](./games/ricochet/devlogs/en/002.Day%202%20-%20Core%20Mechanics%20&%20Editor%20Foundations.md)
 * [**003:** Day 3 - Editor Optimizations and Additional Map Elements ](./games/ricochet/devlogs/en/003.Day%203%20-%20Editor%20Optimizations%20and%20Additional%20Map%20Elements.md)
-
+* [**004:** Day 4 and 5 - Massive Overhaul, Core Game Mechanics Finished ](./games/ricochet/devlogs/en/004.%20Day%204%20and%205%20-%20Massive%20Overhaul,%20Core%20Game%20Mechanics%20Finishedmd)
 
 *(More updates coming soon...)*
 
@@ -85,6 +85,9 @@ Up until now, my default language with Claude has always been Chinese. But for t
 [Conversation 0428: Raw Log](./games/ricochet/devlogs/conversation%20with%20claude%202026-04028.JSONL)
 [Conversation 0429: Raw Log](./games/ricochet/devlogs/conversation%20with%20claude%202026-04029.JSONL)
 [Conversation 0430: Raw Log](./games/ricochet/devlogs/conversation%20with%20claude%202026-04030.jsonl)
+[Conversation 0501: Raw Log](./games/ricochet/devlogs/conversation%20with%20claude%202026-0501.jsonl)
+[Conversation 0502: Raw Log](./games/ricochet/devlogs/conversation%20with%20claude%202026-0502.jsonl)
+
 
 ---
 

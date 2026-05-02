@@ -163,6 +163,74 @@
         color: #1a1d22;
         border-color: #66d973;
       }
+      /* --- Confirm modal (unsaved-changes prompt) --- */
+      .editor-modal {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .editor-modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.65);
+      }
+      .editor-modal-content {
+        position: relative;
+        background: #2a2f36;
+        border: 1px solid #3a4048;
+        border-radius: 6px;
+        padding: 24px;
+        min-width: 360px;
+        max-width: 480px;
+        color: #cccccc;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      }
+      .editor-modal-content p {
+        margin: 0 0 20px;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .editor-modal-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .editor-modal-btn {
+        background: #2a2f36;
+        color: #cccccc;
+        border: 1px solid #3a4048;
+        padding: 8px 16px;
+        font-size: 13px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .editor-modal-btn:hover {
+        background: #3a4048;
+        color: #ffffff;
+      }
+      .editor-modal-btn-primary {
+        background: #4ca6ff;
+        color: #1a1d22;
+        border-color: #4ca6ff;
+      }
+      .editor-modal-btn-primary:hover {
+        background: #6cb6ff;
+        color: #1a1d22;
+      }
+      .editor-modal-btn-danger {
+        background: #d84040;
+        color: #ffffff;
+        border-color: #d84040;
+      }
+      .editor-modal-btn-danger:hover {
+        background: #ff5050;
+      }
+
       /* Per-instance text-label content editor. Lives inside the
          params panel and updates on input (event-delegated) — no
          re-render on keystroke, so focus + caret stick. */
@@ -211,6 +279,25 @@
         color: #8a9098;
         margin: 0 0 32px;
         letter-spacing: 1px;
+      }
+      .menu-play-btn {
+        display: block;
+        margin: 0 auto 12px;
+        padding: 14px 48px;
+        background: #4ca6ff;
+        color: #1a1d22;
+        border: 2px solid #4ca6ff;
+        font-size: 24px;
+        font-weight: 700;
+        border-radius: 8px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.12s, transform 0.12s;
+      }
+      .menu-play-btn:hover {
+        background: #6cb6ff;
+        border-color: #6cb6ff;
+        transform: translateY(-2px);
       }
       .menu-grid {
         display: grid;

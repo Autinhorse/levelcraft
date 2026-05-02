@@ -1,0 +1,36 @@
+# 📅 Devlog #004: Day 4 and 5 - Massive Overhaul, Core Game Mechanics Finished
+
+Date: May 1, 2026 | Hours Worked: 9 hrs (Started at 14:30)
+Date: May 2, 2026 | Hours Worked: 14 hrs (Started at 14:30)
+
+Started the day by updating the video and devlog. Real work began at 14:30. My goal for today was to implement all planned map elements.
+
+1. Today's Progress: A Massive Overhaul
+Engine Swap: From Godot to Phaser.
+Originally, I chose Godot for its powerful cross-platform capabilities. However, after a few days, I realized that downloading Godot's web export (usually 20MB–30MB+) takes too long—often dozens of seconds. After consulting with AI, I felt Godot was too heavy for a web-based app. Since I'm building a 2D platformer, I don't need such a complex engine. The AI recommended Phaser, a pure JS engine with a bundle size under 1–2MB.
+Seeing a better alternative, I decided to migrate. The AI provided a 13-phase step-by-step migration plan, which worked perfectly.
+
+The reason for merging these two days is that I hit my daily token limit on the Claude Max Plan at 1:20 AM on May 2nd.
+
+Resumed work at 10:00 AM. By 18:00, the system, editor, and all planned map elements were fully implemented in Phaser. I’ve created 5 sample levels as a functional demo.
+
+2. Next Steps: Website Planning
+Since I'm working from my laptop while traveling, I’m putting art assets on hold for now. I also need to dive deeper into AI-assisted art generation. Tomorrow, I'll focus on the website structure.
+
+The project is well ahead of schedule! Originally planned for 2–3 weeks, the core game is basically done in just 5 days—even with an engine swap.
+
+---
+
+## 📺 Video Devlog: Day 4
+[![Ricochet Day 4](https://img.youtube.com/vi/uDySVMOtP9E/maxresdefault.jpg)](https://youtu.be/uDySVMOtP9E)
+
+### 🔗 Devlog Navigation
+
+<p align="center">
+  <a href="./003.Day 3 - Editor Optimizations and Additional Map Elements.md">⬅️ Previous: Day 3 - Editor Optimizations and Additional Map Elements</a> | 
+  <a href="../../../../README.md">📖 Catalog</a> | 
+  <a href="#">Next: To be updated ➡️</a>
+</p>
+
+---
+© 2026 AI Dream Builder. Built with 🤖 and ❤️.

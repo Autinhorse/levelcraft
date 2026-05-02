@@ -2,36 +2,552 @@
   "id": "level-04",
   "name": "Level 4",
   "exit": {
-    "page": 0,
-    "x": 28,
-    "y": 16
+    "page": 1,
+    "x": 22,
+    "y": 8
   },
   "pages": [
     {
       "tiles": [
         "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
-        "W............................W",
+        "W.........W...........W......W",
+        "W.........W.C.C.C.C.C.W.CC...W",
+        "W.C.C.C...W...........W.C....W",
+        "W.........W...WWWWW.C.W.C.WWWW",
+        "W.C.......W.C.W.......W.C.W..W",
+        "W.........W...W...C.C.W.C.W..W",
+        "W.C.C.C.C.W.C.W.......W.C.W..W",
+        "W.........W...W.......W.C.WWWW",
+        "W.......C.W.C.W...W...W.C....W",
+        "W.........W...W.C.W...W.C.....",
+        "W.C.C.C.C.W.C.W.C.W...W.C.....",
+        "W.........W...W.C.W...W.C.....",
+        "W.C.......W.C.W.C.WWWWW.C.....",
+        "W.............W.C.......C.....",
+        "W.C.C.C.....C.W.CCCCCCCCCCCC..",
+        "W.............W...............",
         "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
       ],
       "spawn": {
-        "x": 1,
+        "x": 8,
         "y": 16
-      }
+      },
+      "spikes": [
+        {
+          "x": 4,
+          "y": 13,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 5,
+          "y": 13,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 6,
+          "y": 13,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 7,
+          "y": 13,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 8,
+          "y": 13,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 9,
+          "y": 13,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 1,
+          "y": 9,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 2,
+          "y": 9,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 3,
+          "y": 9,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 4,
+          "y": 9,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 5,
+          "y": 9,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 6,
+          "y": 9,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 4,
+          "y": 5,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 5,
+          "y": 5,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 6,
+          "y": 5,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 7,
+          "y": 5,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 8,
+          "y": 5,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 9,
+          "y": 5,
+          "dir": "up",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 15,
+          "y": 5,
+          "dir": "right",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 15,
+          "y": 6,
+          "dir": "right",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 15,
+          "y": 7,
+          "dir": "right",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 29,
+          "y": 12,
+          "dir": "left",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 29,
+          "y": 11,
+          "dir": "left",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 29,
+          "y": 10,
+          "dir": "left",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 26,
+          "y": 9,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 27,
+          "y": 9,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 28,
+          "y": 9,
+          "dir": "down",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 29,
+          "y": 13,
+          "dir": "left",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 29,
+          "y": 14,
+          "dir": "left",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 29,
+          "y": 15,
+          "dir": "left",
+          "duration": 0,
+          "downtime": 3
+        },
+        {
+          "x": 29,
+          "y": 16,
+          "dir": "left",
+          "duration": 0,
+          "downtime": 3
+        }
+      ],
+      "keys": [
+        {
+          "x": 8,
+          "y": 3,
+          "color": 0
+        }
+      ],
+      "key_walls": [
+        {
+          "x": 10,
+          "y": 14,
+          "color": 0
+        },
+        {
+          "x": 10,
+          "y": 15,
+          "color": 0
+        },
+        {
+          "x": 10,
+          "y": 16,
+          "color": 0
+        }
+      ],
+      "conveyors": [
+        {
+          "x": 21,
+          "y": 8,
+          "dir": "ccw"
+        },
+        {
+          "x": 20,
+          "y": 8,
+          "dir": "ccw"
+        },
+        {
+          "x": 19,
+          "y": 8,
+          "dir": "ccw"
+        },
+        {
+          "x": 18,
+          "y": 8,
+          "dir": "ccw"
+        },
+        {
+          "x": 15,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 16,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 17,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 18,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 19,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 20,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 21,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 22,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 23,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 24,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 25,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 26,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 27,
+          "y": 16,
+          "dir": "cw"
+        },
+        {
+          "x": 28,
+          "y": 16,
+          "dir": "cw"
+        }
+      ],
+      "glass_walls": [
+        {
+          "x": 17,
+          "y": 8,
+          "delay": 1
+        },
+        {
+          "x": 16,
+          "y": 8,
+          "delay": 1
+        },
+        {
+          "x": 15,
+          "y": 8,
+          "delay": 1
+        }
+      ],
+      "teleports": [
+        {
+          "x": 27,
+          "y": 2,
+          "target_page": 1
+        }
+      ]
+    },
+    {
+      "tiles": [
+        "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
+        "W............W...............W",
+        "W............W...............W",
+        "W............W...............W",
+        "WWWW.........W...............W",
+        "W............W...............W",
+        "W............W.....WWWWW.....W",
+        "W............W.......W.......W",
+        "W............W.......W.......W",
+        "W.........WWWW.......W.......W",
+        "W............W.....WWWWW.....W",
+        "W............W...............W",
+        "W............W...............W",
+        "W............W...............W",
+        "W........W...W...............W",
+        "W........W...W...............W",
+        "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
+        ".............................."
+      ],
+      "spawn": {
+        "x": 2,
+        "y": 3
+      },
+      "gears": [
+        {
+          "x": 16,
+          "y": 3,
+          "size": 3,
+          "speed": 3,
+          "spin": 4,
+          "waypoints": [
+            {
+              "x": 16,
+              "y": 13
+            },
+            {
+              "x": 26,
+              "y": 13
+            },
+            {
+              "x": 26,
+              "y": 3
+            }
+          ],
+          "closed": true
+        },
+        {
+          "x": 27,
+          "y": 14,
+          "size": 2,
+          "speed": 3,
+          "spin": 4,
+          "waypoints": [
+            {
+              "x": 27,
+              "y": 2
+            },
+            {
+              "x": 15,
+              "y": 2
+            },
+            {
+              "x": 15,
+              "y": 14
+            }
+          ],
+          "closed": true
+        },
+        {
+          "x": 24,
+          "y": 12,
+          "size": 1,
+          "speed": 5,
+          "spin": 5,
+          "waypoints": [
+            {
+              "x": 24,
+              "y": 4
+            }
+          ],
+          "closed": false
+        },
+        {
+          "x": 18,
+          "y": 4,
+          "size": 1,
+          "speed": 5,
+          "spin": 5,
+          "waypoints": [
+            {
+              "x": 18,
+              "y": 12
+            }
+          ],
+          "closed": false
+        },
+        {
+          "x": 8,
+          "y": 9,
+          "size": 2,
+          "speed": 3,
+          "spin": 4,
+          "waypoints": [
+            {
+              "x": 1,
+              "y": 9
+            }
+          ],
+          "closed": false
+        },
+        {
+          "x": 5,
+          "y": 4,
+          "size": 2,
+          "speed": 3,
+          "spin": 4,
+          "waypoints": [
+            {
+              "x": 11,
+              "y": 4
+            }
+          ],
+          "closed": false
+        },
+        {
+          "x": 4,
+          "y": 6,
+          "size": 2,
+          "speed": 3,
+          "spin": 4,
+          "waypoints": [
+            {
+              "x": 4,
+              "y": 14
+            }
+          ],
+          "closed": false
+        }
+      ],
+      "portals": [
+        {
+          "color": 0,
+          "points": [
+            {
+              "x": 11,
+              "y": 14
+            },
+            {
+              "x": 20,
+              "y": 7
+            }
+          ]
+        }
+      ]
     }
   ]
 }

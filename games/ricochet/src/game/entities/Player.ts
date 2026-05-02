@@ -6,6 +6,7 @@ import {
   GRAVITY_TILES,
   TERMINAL_VELOCITY_TILES,
   JUMP_HEIGHT_TILES,
+  RISE_LIFT_TILES,
   REBOUND_DISTANCE_TILES,
   CONVEYOR_SPEED_TILES,
   PAUSE_TIME_SEC,
@@ -167,7 +168,7 @@ export class Player extends Phaser.GameObjects.Rectangle {
 
     if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
       this.direction = -1;
-      this.riseTargetY = this.y - TILE_SIZE;
+      this.riseTargetY = this.y - RISE_LIFT_TILES * TILE_SIZE;
       // Set velocity *now* (not next frame in rising) so the same-frame
       // physics step applies pure vertical motion. Without this, any
       // residual vx from idle's conveyor write would slant the first
@@ -176,7 +177,7 @@ export class Player extends Phaser.GameObjects.Rectangle {
       this.state = PlayerState.RISING;
     } else if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
       this.direction = 1;
-      this.riseTargetY = this.y - TILE_SIZE;
+      this.riseTargetY = this.y - RISE_LIFT_TILES * TILE_SIZE;
       this.body.setVelocity(0, -this.flightSpeed);
       this.state = PlayerState.RISING;
     } else if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {

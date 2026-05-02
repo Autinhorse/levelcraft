@@ -134,4 +134,7 @@ export interface TextLabel extends Cell {
   width: number;
   height: number;
   text: string;
+  /** Font size in pixels. Optional for backward compat — missing
+   *  defaults to 16 in both editor and runtime renderers. */
+  font_size?: number;
 }

@@ -42,11 +42,18 @@ type Trigger = { x: number; y: number; targetPage: number };
 // (visually + collision-wise). For 'up' the lethal points stick UP into
 // the cell's top-air; for 'right' they stick RIGHT, etc.
 type Rect = { x: number; y: number; w: number; h: number };
+// Plate is half the cell (24px at TILE_SIZE 48). At FLIGHT_SPEED 32
+// px/frame, Phaser's arcade-physics shortest-distance separation flips
+// direction once the player overshoots more than half the static body's
+// thickness in one frame. For player height 48 and movement 32, plates
+// thinner than ~16px let a single fast frame put the player on the
+// far side, where Phaser then pushes them deeper instead of back. 24px
+// has comfortable margin and gives a clean 50/50 split.
 const SPIKE_LAYOUT: Record<CardinalDir, { plate: Rect; spike: Rect }> = {
-  up:    { plate: { x: 0,   y: 0.8, w: 1,   h: 0.2 }, spike: { x: 0,   y: 0.4, w: 1,   h: 0.4 } },
-  down:  { plate: { x: 0,   y: 0,   w: 1,   h: 0.2 }, spike: { x: 0,   y: 0.2, w: 1,   h: 0.4 } },
-  left:  { plate: { x: 0.8, y: 0,   w: 0.2, h: 1   }, spike: { x: 0.4, y: 0,   w: 0.4, h: 1   } },
-  right: { plate: { x: 0,   y: 0,   w: 0.2, h: 1   }, spike: { x: 0,   y: 0,   w: 0.4, h: 1   } },
+  up:    { plate: { x: 0,   y: 0.5, w: 1,   h: 0.5 }, spike: { x: 0,   y: 0,   w: 1,   h: 0.5 } },
+  down:  { plate: { x: 0,   y: 0,   w: 1,   h: 0.5 }, spike: { x: 0,   y: 0.5, w: 1,   h: 0.5 } },
+  left:  { plate: { x: 0.5, y: 0,   w: 0.5, h: 1   }, spike: { x: 0,   y: 0,   w: 0.5, h: 1   } },
+  right: { plate: { x: 0,   y: 0,   w: 0.5, h: 1   }, spike: { x: 0.5, y: 0,   w: 0.5, h: 1   } },
 };
 
 const LEVEL_KEY = 'level-default';
@@ -64,6 +71,13 @@ export class PlayScene extends Phaser.Scene {
   private player!: Player;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private hazards!: Phaser.Physics.Arcade.StaticGroup;
+  // Directional spikes (the four-direction `Spike` element). Separate
+  // from `hazards` because the kill / block decision depends on the
+  // player's velocity — wired with a processCallback collider that
+  // kills only when the player moves INTO the spike tips, otherwise
+  // blocks like a regular wall. Each rect carries its `dir` via
+  // setData('dir', ...).
+  private directionalSpikes!: Phaser.Physics.Arcade.StaticGroup;
   // Glass walls: act as walls until the player touches them, then break
   // after their per-instance `delay` (seconds). Separate group so we can
   // attach a per-collision callback that's not run for ordinary walls.
@@ -148,6 +162,17 @@ export class PlayScene extends Phaser.Scene {
   // Passed back to EditScene on the "back" round-trip so its Save
   // button still knows which file to write to.
   private levelPath: string | null = null;
+  // Editor's unsaved-changes flag at the moment of Play hand-off, so
+  // the round trip back to EditScene can restore it. Without this,
+  // playing then returning would silently mark the editor "clean" and
+  // let the user navigate away losing their unsaved changes.
+  private editorDirty = false;
+  // Campaign mode: 0 = not in campaign, 1..N = currently playing the
+  // Nth campaign level. Drives preload (loads `levels/level-NN.json`)
+  // and the level-complete dialog (offers Next Level / Back to Menu).
+  // Persists across cross-page transitions so the trigger fires on
+  // the correct campaign step when the player exits.
+  private campaignLevel = 0;
   // Black overlay for transition fade-out / fade-in. Pinned to the
   // camera (scrollFactor 0) so it covers the whole viewport regardless
   // of the centered-room camera scroll.
@@ -171,6 +196,8 @@ export class PlayScene extends Phaser.Scene {
     level?: LevelData;
     fromEditor?: boolean;
     levelPath?: string;
+    editorDirty?: boolean;
+    campaignLevel?: number;
   }): void {
     this.startPageIndex = data?.pageIndex ?? DEFAULT_PAGE_INDEX;
     this.shouldFadeIn = data?.fadeIn ?? false;
@@ -179,13 +206,27 @@ export class PlayScene extends Phaser.Scene {
     // preserve the flag (restart-through-transitionToPage re-passes it).
     this.launchedFromEditor = data?.fromEditor ?? false;
     this.levelPath = data?.levelPath ?? null;
+    this.editorDirty = data?.editorDirty ?? false;
+    this.campaignLevel = data?.campaignLevel ?? 0;
   }
 
   preload(): void {
     // Skip the file fetch when an in-memory level was handed to us —
     // the editor's level may be unsaved and not yet on disk.
     if (!this.providedLevel) {
-      this.load.json(LEVEL_KEY, DEFAULT_LEVEL_URL);
+      // Same Phaser-cache-vs-key issue as EditScene.preload: the
+      // JSON cache is keyed by LEVEL_KEY, so a prior scene run
+      // could have left a different level's data under this key.
+      // Clear it so this load fetches the actual current URL.
+      if (this.cache.json.has(LEVEL_KEY)) {
+        this.cache.json.remove(LEVEL_KEY);
+      }
+      // Campaign mode → the corresponding numbered level file.
+      // Otherwise fall back to the legacy DEFAULT_LEVEL_URL sandbox.
+      const url = this.campaignLevel > 0
+        ? `levels/level-${String(this.campaignLevel).padStart(2, '0')}.json`
+        : DEFAULT_LEVEL_URL;
+      this.load.json(LEVEL_KEY, url);
     }
   }
 
@@ -215,6 +256,7 @@ export class PlayScene extends Phaser.Scene {
 
     this.walls = this.physics.add.staticGroup();
     this.hazards = this.physics.add.staticGroup();
+    this.directionalSpikes = this.physics.add.staticGroup();
     this.glassWalls = this.physics.add.staticGroup();
     this.killableWalls = this.physics.add.staticGroup();
     this.coins = this.add.group();  // plain group — no physics, see field comment
@@ -266,6 +308,18 @@ export class PlayScene extends Phaser.Scene {
 
     this.physics.add.collider(this.player, this.walls);
     this.physics.add.overlap(this.player, this.hazards, () => this.player.die());
+    // Directional spikes: a velocity-aware collider. The processCallback
+    // runs BEFORE separation; we kill when the player's velocity points
+    // INTO the spike tips (matching `dir`), and otherwise return true to
+    // let the collider block the player like a wall. Returning false in
+    // the lethal branch skips separation so the death-pop animation can
+    // carry the body cleanly past the rect.
+    this.physics.add.collider(
+      this.player,
+      this.directionalSpikes,
+      undefined,
+      (_p, spike) => this.processDirectionalSpike(spike as Phaser.GameObjects.Rectangle),
+    );
     // Glass walls: collide normally; the callback starts the break timer
     // on first contact and ignores subsequent contacts until the wall
     // self-destructs.
@@ -302,6 +356,7 @@ export class PlayScene extends Phaser.Scene {
     this.physics.add.overlap(this.bullets, this.killableWalls, handleBulletWallHit);
     this.physics.add.overlap(this.bullets, this.hazards, handleBulletWallHit);
     this.physics.add.overlap(this.bullets, this.keyWalls, handleBulletWallHit);
+    this.physics.add.overlap(this.bullets, this.directionalSpikes, handleBulletWallHit);
     // Bullet vs player: kill + despawn.
     this.physics.add.overlap(this.player, this.bullets, (_player, bullet) => {
       this.player.die();
@@ -363,32 +418,41 @@ export class PlayScene extends Phaser.Scene {
       });
     }
 
-    if (this.launchedFromEditor) {
-      this.buildBackButton();
-    }
+    // Always show a back button during play. Editor-launched runs go
+    // straight back to the editor (fast iterate); campaign / standalone
+    // runs prompt with a Continue / Exit dialog so the player doesn't
+    // lose progress to a stray click.
+    this.buildBackButton();
     // Tear down DOM additions on shutdown so they don't linger after a
-    // scene switch (back to editor) or hot reload.
+    // scene switch (back to editor / menu) or hot reload.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.destroyBackButton());
     this.events.once(Phaser.Scenes.Events.DESTROY, () => this.destroyBackButton());
   }
 
   private buildBackButton(): void {
     if (this.backButton) return;
+    const label = this.launchedFromEditor ? '◀ Edit' : '◀ Exit';
     const wrap = document.createElement('div');
     wrap.className = 'editor-overlay';
     wrap.innerHTML = `
       <div class="editor-back-wrap">
-        <button class="editor-btn">◀ Edit</button>
+        <button class="editor-btn">${label}</button>
       </div>
     `;
     document.body.appendChild(wrap);
     this.backButton = wrap;
     wrap.querySelector('button')?.addEventListener('click', () => {
-      this.scene.start('EditScene', {
-        level: this.providedLevel ?? this.loadedLevel,
-        pageIndex: this.currentPageIndex,
-        levelPath: this.levelPath ?? undefined,
-      });
+      if (this.launchedFromEditor) {
+        // Direct back — keeps the test → tweak → test loop fast.
+        this.scene.start('EditScene', {
+          level: this.providedLevel ?? this.loadedLevel,
+          pageIndex: this.currentPageIndex,
+          levelPath: this.levelPath ?? undefined,
+          dirty: this.editorDirty,
+        });
+      } else {
+        this.showExitConfirm();
+      }
     });
   }
 
@@ -397,6 +461,44 @@ export class PlayScene extends Phaser.Scene {
       this.backButton.remove();
       this.backButton = null;
     }
+  }
+
+  // Confirm dialog for non-editor exits. Pauses the scene while the
+  // modal is open so the player doesn't keep falling / dying behind
+  // the dialog. Continue resumes, Exit returns to MenuScene.
+  private showExitConfirm(): void {
+    // Guard against double-click spawning two dialogs.
+    if (document.querySelector('.editor-modal[data-modal-role="exit-confirm"]')) {
+      return;
+    }
+    this.scene.pause();
+
+    const dialog = document.createElement('div');
+    dialog.className = 'editor-modal';
+    dialog.setAttribute('data-modal-role', 'exit-confirm');
+    dialog.innerHTML = `
+      <div class="editor-modal-backdrop"></div>
+      <div class="editor-modal-content">
+        <p>Exit to menu?</p>
+        <div class="editor-modal-actions">
+          <button data-modal-action="exit" class="editor-modal-btn editor-modal-btn-danger">Exit</button>
+          <button data-modal-action="continue" class="editor-modal-btn editor-modal-btn-primary">Continue</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement;
+      const action = t.getAttribute('data-modal-action');
+      if (action === 'continue') {
+        dialog.remove();
+        this.scene.resume();
+      } else if (action === 'exit') {
+        dialog.remove();
+        // scene.start handles cleanup of the paused PlayScene.
+        this.scene.start('MenuScene');
+      }
+    });
   }
 
   update(time: number, delta: number): void {
@@ -524,8 +626,15 @@ export class PlayScene extends Phaser.Scene {
   private makeSpike(col: number, row: number, dir: CardinalDir): Phaser.GameObjects.Rectangle {
     const layout = SPIKE_LAYOUT[dir];
     // Plate first (visually beneath the spike where they overlap), spike on top.
-    this.makeSpikePart(col, row, layout.plate, COLOR_SPIKE_PLATE, /* hazard= */ false);
-    return this.makeSpikePart(col, row, layout.spike, COLOR_SPIKE, /* hazard= */ true);
+    // Plate is a regular wall; the lethal rect is routed to
+    // `directionalSpikes` (separate group) and tagged with the spike
+    // direction so the velocity-aware collider can do its check.
+    this.makeSpikePart(col, row, layout.plate, COLOR_SPIKE_PLATE, this.walls);
+    const lethal = this.makeSpikePart(
+      col, row, layout.spike, COLOR_SPIKE, this.directionalSpikes,
+    );
+    lethal.setData('dir', dir);
+    return lethal;
   }
 
   private makeSpikePart(
@@ -533,7 +642,7 @@ export class PlayScene extends Phaser.Scene {
     row: number,
     rect: Rect,
     color: number,
-    hazard: boolean,
+    group: Phaser.Physics.Arcade.StaticGroup,
   ): Phaser.GameObjects.Rectangle {
     const w = rect.w * TILE_SIZE;
     const h = rect.h * TILE_SIZE;
@@ -541,7 +650,6 @@ export class PlayScene extends Phaser.Scene {
     const y = row * TILE_SIZE + rect.y * TILE_SIZE + h / 2;
 
     const visual = this.add.rectangle(x, y, w, h, color);
-    const group = hazard ? this.hazards : this.walls;
     group.add(visual);
     // After group.add gives the rect a static body, sync the body's size
     // to the rect's actual dimensions (default static body uses display
@@ -571,6 +679,33 @@ export class PlayScene extends Phaser.Scene {
       firing: true,
       phaseTimer: dur,
     });
+  }
+
+  // ProcessCallback for the player vs directional-spikes collider.
+  // Runs BEFORE separation; the return value tells Phaser whether to
+  // separate (`true` = block the player, `false` = ignore this pair
+  // for this frame). We kill only when the player is moving DIRECTLY
+  // INTO the spike tips — i.e., the velocity component on the lethal
+  // axis both points toward the tips AND dominates the perpendicular
+  // axis. This avoids false kills like "falling sideways past an
+  // up-spike with a small gravity-induced v.y": |v.x| ≫ |v.y| means
+  // the player isn't really moving INTO the tips, so we block instead
+  // of killing. die() is idempotent so repeated triggers are harmless.
+  private processDirectionalSpike(spike: Phaser.GameObjects.Rectangle): boolean {
+    const dir = spike.getData('dir') as CardinalDir;
+    const v = this.player.body.velocity;
+    const ax = Math.abs(v.x);
+    const ay = Math.abs(v.y);
+    const lethal =
+      (dir === 'up' && v.y > 0 && ay > ax) ||
+      (dir === 'down' && v.y < 0 && ay > ax) ||
+      (dir === 'left' && v.x > 0 && ax > ay) ||
+      (dir === 'right' && v.x < 0 && ax > ay);
+    if (lethal) {
+      this.player.die();
+      return false;  // skip separation; death-pop carries the body away
+    }
+    return true;     // separate (block like a wall)
   }
 
   private buildGlassWalls(page: PageData): void {
@@ -969,7 +1104,7 @@ export class PlayScene extends Phaser.Scene {
         tl.text,
         {
           color: '#cccccc',
-          fontSize: '16px',
+          fontSize: `${tl.font_size ?? 16}px`,
           fontFamily: 'system-ui, -apple-system, sans-serif',
           wordWrap: { width: tl.width * TILE_SIZE - pad * 2 },
         },
@@ -1069,11 +1204,52 @@ export class PlayScene extends Phaser.Scene {
             level: this.providedLevel ?? this.loadedLevel,
             pageIndex: this.loadedLevel.exit.page,
             levelPath: this.levelPath ?? undefined,
+            dirty: this.editorDirty,
           });
+        } else if (this.campaignLevel > 0) {
+          this.showCampaignComplete();
         } else {
           this.showLevelComplete();
         }
       },
+    });
+  }
+
+  // Campaign-mode level-complete dialog. Two paths: continue to the
+  // next numbered level, or return to MenuScene. The last campaign
+  // level (>= 12) drops the Next button and shows a "game complete"
+  // headline instead — the only action is back-to-menu.
+  private showCampaignComplete(): void {
+    const isLast = this.campaignLevel >= 12;
+    const headline = isLast
+      ? `All ${this.campaignLevel} levels cleared!`
+      : `Level ${this.campaignLevel} complete!`;
+    const nextBtn = isLast
+      ? ''
+      : `<button data-modal-action="next" class="editor-modal-btn editor-modal-btn-primary">Next Level</button>`;
+    const dialog = document.createElement('div');
+    dialog.className = 'editor-modal';
+    dialog.innerHTML = `
+      <div class="editor-modal-backdrop"></div>
+      <div class="editor-modal-content">
+        <p>${headline}</p>
+        <div class="editor-modal-actions">
+          <button data-modal-action="menu" class="editor-modal-btn">Back to Menu</button>
+          ${nextBtn}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement;
+      const action = t.getAttribute('data-modal-action');
+      if (action === 'menu') {
+        dialog.remove();
+        this.scene.start('MenuScene');
+      } else if (action === 'next') {
+        dialog.remove();
+        this.scene.start('PlayScene', { campaignLevel: this.campaignLevel + 1 });
+      }
     });
   }
 
@@ -1138,10 +1314,14 @@ export class PlayScene extends Phaser.Scene {
           level?: LevelData;
           fromEditor?: boolean;
           levelPath?: string;
+          editorDirty?: boolean;
+          campaignLevel?: number;
         } = { pageIndex: targetPage, fadeIn: true };
         if (this.providedLevel) restartData.level = this.providedLevel;
         if (this.launchedFromEditor) restartData.fromEditor = true;
         if (this.levelPath) restartData.levelPath = this.levelPath;
+        if (this.editorDirty) restartData.editorDirty = this.editorDirty;
+        if (this.campaignLevel) restartData.campaignLevel = this.campaignLevel;
         this.scene.restart(restartData);
       },
     });

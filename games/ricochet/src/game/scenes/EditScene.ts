@@ -2,29 +2,7 @@ import Phaser from 'phaser';
 
 import {
   COLOR_BACKGROUND,
-  COLOR_CANNON,
-  COLOR_CANNON_BARREL,
-  COLOR_COIN,
-  COLOR_CONVEYOR,
-  COLOR_EXIT,
-  COLOR_GEAR,
-  COLOR_GEAR_HUB,
-  COLOR_GEAR_SPOKE,
-  COLOR_GLASS,
-  COLOR_GRID,
-  COLOR_LASER_BEAM,
-  COLOR_LASER_CANNON,
-  COLOR_LASER_CANNON_BARREL,
-  COLOR_LASER_HUB,
-  COLOR_PLAYER,
-  COLOR_SPIKE,
-  COLOR_SPIKE_PLATE,
-  COLOR_TELEPORT,
-  COLOR_TURRET_HUB,
-  COLOR_WALL,
   DEFAULT_LEVEL_URL,
-  KEY_COLORS_DARK,
-  KEY_COLORS_LIGHT,
   TILE_SIZE,
 } from '../config/feel';
 import { validateLevel } from '../../shared/level-format/load';
@@ -47,24 +25,36 @@ import type {
   TextLabel as TextLabelData,
   Turret as TurretData,
 } from '../../shared/level-format/types';
-
-// Selection state: a tagged reference into the level data so mutations
-// flow straight back into the saved JSON. The `ref` is the actual
-// element object inside its page array, NOT a copy — drag-move works
-// transparently because moveElementAt mutates ref.x / ref.y in place.
-type SelectedElement =
-  | { kind: 'glass_wall'; ref: GlassWallData }
-  | { kind: 'spike_block'; ref: SpikeBlockData }
-  | { kind: 'spike'; ref: SpikeData }
-  | { kind: 'conveyor'; ref: ConveyorData }
-  | { kind: 'cannon'; ref: CannonData }
-  | { kind: 'turret'; ref: TurretData }
-  | { kind: 'gear'; ref: GearData }
-  | { kind: 'key'; ref: KeyData }
-  | { kind: 'key_wall'; ref: KeyWallData }
-  | { kind: 'teleport'; ref: TeleportData }
-  | { kind: 'laser_cannon'; ref: LaserCannonData }
-  | { kind: 'text_label'; ref: TextLabelData };
+import {
+  drawCannon,
+  drawCoin,
+  drawConveyor,
+  drawExit,
+  drawGear,
+  drawGlassWall,
+  drawGridBackground,
+  drawKey,
+  drawKeyWall,
+  drawLaserCannon,
+  drawPortal,
+  drawSelectionBox,
+  drawSpawn,
+  drawSpike,
+  drawSpikeBlock,
+  drawTeleport,
+  drawTextLabel,
+  drawTurret,
+  drawWall,
+} from './editor/drawers';
+import {
+  colorParamHtml,
+  dirParamHtml,
+  elementParamHtml,
+  laserCannonParamHtml,
+  teleportParamHtml,
+  textToolParamHtml,
+} from './editor/paramsHtml';
+import type { SelectedElement } from './editor/types';
 
 const LEVEL_KEY = 'editor-level';
 
@@ -125,24 +115,9 @@ const DEFAULT_GEAR_SIZE = 2;
 const DEFAULT_GEAR_SPEED = 3.0;
 const DEFAULT_GEAR_SPIN = 4.0;
 
-// Spike + barrel layouts duplicated from PlayScene for v1 — the editor
-// only needs the visual shape, not the physics layout. Phase 13b can lift
-// these into a shared draw module once the editor's drawing surface is
-// stable; premature extraction now would couple two files that are still
-// in flux.
-type Rect = { x: number; y: number; w: number; h: number };
-const SPIKE_LAYOUT: Record<CardinalDir, { plate: Rect; spike: Rect }> = {
-  up:    { plate: { x: 0,   y: 0.8, w: 1,   h: 0.2 }, spike: { x: 0,   y: 0.4, w: 1,   h: 0.4 } },
-  down:  { plate: { x: 0,   y: 0,   w: 1,   h: 0.2 }, spike: { x: 0,   y: 0.2, w: 1,   h: 0.4 } },
-  left:  { plate: { x: 0.8, y: 0,   w: 0.2, h: 1   }, spike: { x: 0.4, y: 0,   w: 0.4, h: 1   } },
-  right: { plate: { x: 0,   y: 0,   w: 0.2, h: 1   }, spike: { x: 0,   y: 0,   w: 0.4, h: 1   } },
-};
-const BARREL_RECTS: Record<CardinalDir, Rect> = {
-  up:    { x: 0.35, y: 0,    w: 0.30, h: 0.50 },
-  down:  { x: 0.35, y: 0.50, w: 0.30, h: 0.50 },
-  left:  { x: 0,    y: 0.35, w: 0.50, h: 0.30 },
-  right: { x: 0.50, y: 0.35, w: 0.50, h: 0.30 },
-};
+// Spike + barrel layouts moved to ./editor/drawers; the editor's
+// drawers module owns its own copies (PlayScene still has its physics
+// copy independently — they happen to match today, may diverge later).
 
 // Phase 13a-1 — level editor scaffolding. Renders the loaded level
 // non-interactively (no click-to-place yet — that's 13a-2). What works:
@@ -211,16 +186,53 @@ export class EditScene extends Phaser.Scene {
   // a download in that case so changes aren't lost.
   private levelPath: string | null = null;
 
+  // True iff the level has been modified since the last successful
+  // Save (or since loading from disk). Drives the unsaved-changes
+  // confirm dialog when the user navigates back to the menu, and is
+  // round-tripped through PlayScene so it survives play-testing.
+  private dirty = false;
+
   constructor() {
     super('EditScene');
   }
 
-  init(data?: { level?: LevelData; pageIndex?: number; levelPath?: string }): void {
-    if (data?.level) {
-      this.level = data.level;
-    }
+  init(data?: {
+    level?: LevelData;
+    pageIndex?: number;
+    levelPath?: string;
+    dirty?: boolean;
+  }): void {
+    // Phaser scenes are SINGLETONS — `scene.start()` re-runs the
+    // lifecycle methods on the SAME instance, so any field we don't
+    // explicitly reset here leaks across runs. The original code only
+    // assigned `this.level` when `data.level` was provided; coming
+    // back from MenuScene with just `{ levelPath }` left the previous
+    // level's in-memory data sitting in `this.level`, which the
+    // `if (!this.level)` checks in preload + create then short-
+    // circuited — picking Level 2 from the menu after editing Level
+    // 1 silently reused Level 1's data (and Save then wrote it back
+    // to Level 2's file on disk).
+    this.level = (data?.level ?? undefined) as LevelData;
     this.currentPageIndex = data?.pageIndex ?? 0;
     this.levelPath = data?.levelPath ?? null;
+    // dirty is preserved across Play round-trips so unsaved changes
+    // don't silently get "forgotten" when the user plays the level
+    // and comes back. A fresh load from disk passes no `dirty`, so
+    // the default-false is correct there.
+    this.dirty = data?.dirty ?? false;
+    // Always reset transient gesture state — neither type should
+    // ever survive a scene restart anyway, but be explicit.
+    this.placementDragState = null;
+    this.selectGesture = null;
+    // Selection / gear-edit refs point into `this.level`'s arrays.
+    // They stay valid on a Play → Edit round-trip (same in-memory
+    // level handed back), but a fresh menu pick replaces the level
+    // and orphans them — clear in that case so the orange highlight
+    // doesn't anchor at the wrong cell.
+    if (!data?.level) {
+      this.selectedElement = null;
+      this.gearEditState = null;
+    }
   }
 
   preload(): void {
@@ -230,12 +242,30 @@ export class EditScene extends Phaser.Scene {
     // we fall back to the legacy default (kept around as a sandbox).
     if (!this.level) {
       const url = this.levelPath ?? DEFAULT_LEVEL_URL;
+      // Phaser's JSON cache is keyed by the asset key, NOT the URL —
+      // a second EditScene boot with a different `levelPath` but the
+      // same LEVEL_KEY would otherwise serve the previously-cached
+      // payload, so picking Level 2 from the menu after editing Level
+      // 1 would silently load Level 1's data (and Save would write
+      // Level 1's data to Level 2's file). Forcing a fresh fetch by
+      // clearing the cache entry first.
+      if (this.cache.json.has(LEVEL_KEY)) {
+        this.cache.json.remove(LEVEL_KEY);
+      }
       this.load.json(LEVEL_KEY, url);
     }
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(COLOR_BACKGROUND);
+
+    // Phaser globally captures any key registered via `addKey()` /
+    // `createCursorKeys()` (PlayScene does both for SPACE + arrows)
+    // and calls preventDefault on it — which blocks those keys from
+    // reaching the editor's textarea (text-label CONTENT field).
+    // EditScene needs no keyboard input of its own, so clear the
+    // global captures here. PlayScene re-adds them when it boots.
+    this.input.keyboard?.clearCaptures();
 
     if (!this.level) {
       const raw = this.cache.json.get(LEVEL_KEY) as unknown;
@@ -284,375 +314,59 @@ export class EditScene extends Phaser.Scene {
     const offsetY = (this.scale.gameSize.height - rows * TILE_SIZE) / 2;
     this.cameras.main.setScroll(-offsetX, -offsetY);
 
-    this.drawGridBackground(cols, rows);
+    const root = this.pageRoot;
+
+    drawGridBackground(root, cols, rows);
 
     for (let r = 0; r < rows; r++) {
       const row = page.tiles[r]!;
       for (let c = 0; c < row.length; c++) {
         const ch = row.charAt(c);
-        if (ch === 'W') this.drawWall(c, r);
-        else if (ch === 'C') this.drawCoin(c, r);
+        if (ch === 'W') drawWall(root, c, r);
+        else if (ch === 'C') drawCoin(root, c, r);
       }
     }
 
-    page.glass_walls?.forEach((g) => this.drawGlassWall(g.x, g.y));
-    page.spike_blocks?.forEach((s) => this.drawSpikeBlock(s.x, s.y));
-    page.conveyors?.forEach((c) => this.drawConveyor(c.x, c.y, c.dir));
-    page.spikes?.forEach((s) => this.drawSpike(s.x, s.y, s.dir));
-    page.cannons?.forEach((c) => this.drawCannon(c.x, c.y, c.dir));
-    page.key_walls?.forEach((k) => this.drawKeyWall(k.x, k.y, k.color));
-    page.keys?.forEach((k) => this.drawKey(k.x, k.y, k.color));
-    page.gears?.forEach((g) => this.drawGear(g));
+    page.glass_walls?.forEach((g) => drawGlassWall(root, g.x, g.y));
+    page.spike_blocks?.forEach((s) => drawSpikeBlock(root, s.x, s.y));
+    page.conveyors?.forEach((c) => drawConveyor(root, c.x, c.y, c.dir));
+    page.spikes?.forEach((s) => drawSpike(root, s.x, s.y, s.dir));
+    page.cannons?.forEach((c) => drawCannon(root, c.x, c.y, c.dir));
+    page.key_walls?.forEach((k) => drawKeyWall(root, k.x, k.y, k.color));
+    page.keys?.forEach((k) => drawKey(root, k.x, k.y, k.color));
+    page.gears?.forEach((g) => drawGear(root, g, this.gearEditState?.gear === g));
     page.portals?.forEach((p) =>
-      p.points.forEach((pt) => this.drawPortal(pt.x, pt.y, p.color)),
+      p.points.forEach((pt) => drawPortal(root, pt.x, pt.y, p.color)),
     );
-    page.turrets?.forEach((t) => this.drawTurret(t.x, t.y));
-    page.laser_cannons?.forEach((l) => this.drawLaserCannon(l.x, l.y, l.dir));
-    page.text_labels?.forEach((tl) => this.drawTextLabel(tl));
-    page.teleports?.forEach((t) => this.drawTeleport(t.x, t.y, t.target_page));
+    page.turrets?.forEach((t) => drawTurret(root, t.x, t.y));
+    page.laser_cannons?.forEach((l) => drawLaserCannon(root, l.x, l.y, l.dir));
+    page.text_labels?.forEach((tl) => drawTextLabel(root, tl));
+    page.teleports?.forEach((t) => drawTeleport(root, t.x, t.y, t.target_page));
 
-    this.drawSpawn(page.spawn.x, page.spawn.y);
+    drawSpawn(root, page.spawn.x, page.spawn.y);
     if (this.level.exit.page === this.currentPageIndex) {
-      this.drawExit(this.level.exit.x, this.level.exit.y);
-    }
-    this.drawSelectionBox();
-  }
-
-  // Bright orange outline around the selected element's anchor cell.
-  // For multi-cell elements (e.g. size-2+ gears) this shows the home
-  // cell only; that's intentional — the highlight names the cell the
-  // user clicked, which is also the drag origin and the data anchor.
-  private drawSelectionBox(): void {
-    if (!this.selectedElement) return;
-    const sel = this.selectedElement;
-    // Multi-cell elements (text_label) outline their full bounds; the
-    // single-cell default outlines just the anchor cell.
-    const w = sel.kind === 'text_label' ? sel.ref.width * TILE_SIZE : TILE_SIZE;
-    const h = sel.kind === 'text_label' ? sel.ref.height * TILE_SIZE : TILE_SIZE;
-    const tlX = sel.ref.x * TILE_SIZE;
-    const tlY = sel.ref.y * TILE_SIZE;
-    const box = this.add.graphics();
-    box.lineStyle(3, 0xffaa33, 1);
-    box.strokeRect(tlX, tlY, w, h);
-    // Above the page renders so the highlight always reads on top of
-    // its element's visual.
-    box.setDepth(60);
-    this.register(box);
-  }
-
-  // Adds a child to the per-page container so the next renderPage() can
-  // tear it down with removeAll(true) (which destroys children, not just
-  // detaches them).
-  private register(obj: Phaser.GameObjects.GameObject): void {
-    this.pageRoot.add(obj);
-  }
-
-  private cellCenter(col: number, row: number): { x: number; y: number } {
-    return { x: (col + 0.5) * TILE_SIZE, y: (row + 0.5) * TILE_SIZE };
-  }
-
-  private drawGridBackground(cols: number, rows: number): void {
-    const g = this.add.graphics();
-    g.lineStyle(1, COLOR_GRID, 1);
-    for (let c = 0; c <= cols; c++) {
-      g.lineBetween(c * TILE_SIZE, 0, c * TILE_SIZE, rows * TILE_SIZE);
-    }
-    for (let r = 0; r <= rows; r++) {
-      g.lineBetween(0, r * TILE_SIZE, cols * TILE_SIZE, r * TILE_SIZE);
-    }
-    g.setDepth(-100);
-    this.register(g);
-  }
-
-  private drawWall(col: number, row: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_WALL));
-  }
-
-  private drawCoin(col: number, row: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(
-      this.add.rectangle(x, y, TILE_SIZE * 0.55, TILE_SIZE * 0.55, COLOR_COIN),
-    );
-  }
-
-  private drawGlassWall(col: number, row: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    const r = this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_GLASS);
-    r.setAlpha(0.55);
-    this.register(r);
-  }
-
-  private drawSpikeBlock(col: number, row: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_SPIKE));
-    this.register(
-      this.add.rectangle(x, y, TILE_SIZE / 3, TILE_SIZE / 3, COLOR_SPIKE_PLATE),
-    );
-  }
-
-  private drawConveyor(col: number, row: number, dir: ConveyorDir): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_CONVEYOR));
-    this.register(
-      this.add
-        .text(x, y, dir === 'cw' ? '→' : '←', {
-          color: '#ffffff',
-          fontSize: '24px',
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5),
-    );
-  }
-
-  private drawSpike(col: number, row: number, dir: CardinalDir): void {
-    const tlX = col * TILE_SIZE;
-    const tlY = row * TILE_SIZE;
-    const layout = SPIKE_LAYOUT[dir];
-    this.register(
-      this.add.rectangle(
-        tlX + (layout.plate.x + layout.plate.w / 2) * TILE_SIZE,
-        tlY + (layout.plate.y + layout.plate.h / 2) * TILE_SIZE,
-        layout.plate.w * TILE_SIZE,
-        layout.plate.h * TILE_SIZE,
-        COLOR_SPIKE_PLATE,
-      ),
-    );
-    this.register(
-      this.add.rectangle(
-        tlX + (layout.spike.x + layout.spike.w / 2) * TILE_SIZE,
-        tlY + (layout.spike.y + layout.spike.h / 2) * TILE_SIZE,
-        layout.spike.w * TILE_SIZE,
-        layout.spike.h * TILE_SIZE,
-        COLOR_SPIKE,
-      ),
-    );
-  }
-
-  private drawCannon(col: number, row: number, dir: CardinalDir): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_CANNON));
-    const tlX = col * TILE_SIZE;
-    const tlY = row * TILE_SIZE;
-    const r = BARREL_RECTS[dir];
-    this.register(
-      this.add.rectangle(
-        tlX + (r.x + r.w / 2) * TILE_SIZE,
-        tlY + (r.y + r.h / 2) * TILE_SIZE,
-        r.w * TILE_SIZE,
-        r.h * TILE_SIZE,
-        COLOR_CANNON_BARREL,
-      ),
-    );
-  }
-
-  private drawKeyWall(col: number, row: number, colorIdx: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(
-      this.add.rectangle(
-        x,
-        y,
-        TILE_SIZE,
-        TILE_SIZE,
-        KEY_COLORS_DARK[colorIdx] ?? 0x444444,
-      ),
-    );
-  }
-
-  private drawKey(col: number, row: number, colorIdx: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(
-      this.add.circle(x, y, TILE_SIZE * 0.25, KEY_COLORS_LIGHT[colorIdx] ?? 0xffffff),
-    );
-  }
-
-  private drawGear(g: GearData): void {
-    const { x, y } = this.cellCenter(g.x, g.y);
-    const r = (g.size * TILE_SIZE) / 2;
-    this.register(this.add.circle(x, y, r, COLOR_GEAR));
-    const spokes = this.add.graphics();
-    spokes.lineStyle(3, COLOR_GEAR_SPOKE, 1);
-    spokes.lineBetween(x - r * 0.9, y, x + r * 0.9, y);
-    spokes.lineBetween(x, y - r * 0.9, x, y + r * 0.9);
-    this.register(spokes);
-    this.register(this.add.circle(x, y, r * 0.22, COLOR_GEAR_HUB));
-
-    // Path overlay — dashed-ish line through home + waypoints, plus a
-    // small dot at each waypoint cell. Editor-only visual; the runtime
-    // renders the gear without these so the path stays "behind the scenes"
-    // during play.
-    if (g.waypoints.length > 0) {
-      const path = this.add.graphics();
-      path.lineStyle(2, COLOR_GEAR_HUB, 0.6);
-      path.beginPath();
-      path.moveTo(x, y);
-      for (const wp of g.waypoints) {
-        const c = this.cellCenter(wp.x, wp.y);
-        path.lineTo(c.x, c.y);
-      }
-      if (g.closed) {
-        path.lineTo(x, y);
-      }
-      path.strokePath();
-      this.register(path);
-      for (const wp of g.waypoints) {
-        const c = this.cellCenter(wp.x, wp.y);
-        this.register(this.add.circle(c.x, c.y, TILE_SIZE * 0.1, COLOR_GEAR_HUB));
-      }
+      drawExit(root, this.level.exit.x, this.level.exit.y);
     }
 
-    // Bright ring around the gear currently in path-edit mode so the
-    // user sees which gear's waypoints they're appending to.
-    if (this.gearEditState?.gear === g) {
-      const ring = this.add.graphics();
-      ring.lineStyle(3, 0x4ca6ff, 0.95);
-      ring.strokeCircle(x, y, r + 5);
-      this.register(ring);
-    }
-  }
-
-  private drawPortal(col: number, row: number, colorIdx: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(
-      this.add.circle(x, y, TILE_SIZE * 0.45, KEY_COLORS_DARK[colorIdx] ?? 0x444444),
-    );
-    this.register(
-      this.add.circle(x, y, TILE_SIZE * 0.30, KEY_COLORS_LIGHT[colorIdx] ?? 0xffffff),
-    );
-  }
-
-  private drawTurret(col: number, row: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_CANNON));
-    // Static "rest" pose — barrel pointing right at rotation 0, matching
-    // the initial state Turret.barrel has before the first track update.
-    this.register(
-      this.add.rectangle(
-        x + TILE_SIZE * 0.30,
-        y,
-        TILE_SIZE * 0.60,
-        TILE_SIZE * 0.20,
-        COLOR_CANNON_BARREL,
-      ),
-    );
-    this.register(this.add.circle(x, y, TILE_SIZE * 0.16, COLOR_TURRET_HUB));
-  }
-
-  // Editor preview of a laser cannon. Shows the base + a barrel pointing
-  // in the configured initial direction + a faint dashed-style line that
-  // hints at the beam path. We don't run the duty cycle or rotation in
-  // the editor — the runtime handles that.
-  private drawLaserCannon(col: number, row: number, dir: CardinalDir): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_LASER_CANNON));
-    const tlX = col * TILE_SIZE;
-    const tlY = row * TILE_SIZE;
-    const r = BARREL_RECTS[dir];
-    this.register(
-      this.add.rectangle(
-        tlX + (r.x + r.w / 2) * TILE_SIZE,
-        tlY + (r.y + r.h / 2) * TILE_SIZE,
-        r.w * TILE_SIZE,
-        r.h * TILE_SIZE,
-        COLOR_LASER_CANNON_BARREL,
-      ),
-    );
-    this.register(this.add.circle(x, y, TILE_SIZE * 0.16, COLOR_LASER_HUB));
-    // Beam-direction hint — short red line projecting one tile out from
-    // the cannon edge in `dir`. Faint so it doesn't clutter the editor.
-    const offsetMap: Record<CardinalDir, { dx: number; dy: number }> = {
-      up: { dx: 0, dy: -1 },
-      down: { dx: 0, dy: 1 },
-      left: { dx: -1, dy: 0 },
-      right: { dx: 1, dy: 0 },
-    };
-    const o = offsetMap[dir];
-    const hint = this.add.graphics();
-    hint.lineStyle(2, COLOR_LASER_BEAM, 0.5);
-    hint.lineBetween(
-      x + o.dx * TILE_SIZE * 0.5,
-      y + o.dy * TILE_SIZE * 0.5,
-      x + o.dx * TILE_SIZE * 1.5,
-      y + o.dy * TILE_SIZE * 1.5,
-    );
-    this.register(hint);
-  }
-
-  // Decorative multi-cell text overlay. Bounds rendered as a faint
-  // outline so empty / short text is still visible and clickable in
-  // the editor; runtime drops the outline. Word-wrapping uses the
-  // cell-width minus a small inner padding so glyphs don't bleed
-  // across the bounds edge.
-  private drawTextLabel(tl: TextLabelData): void {
-    const tlX = tl.x * TILE_SIZE;
-    const tlY = tl.y * TILE_SIZE;
-    const w = tl.width * TILE_SIZE;
-    const h = tl.height * TILE_SIZE;
-    const pad = 4;
-
-    // Faint dashed-style bounds outline so an empty / short label is
-    // still locatable + clickable in the editor.
-    const outline = this.add.graphics();
-    outline.lineStyle(1, 0x666c8c, 0.5);
-    outline.strokeRect(tlX, tlY, w, h);
-    this.register(outline);
-
-    if (tl.text.length > 0) {
-      const text = this.add.text(tlX + pad, tlY + pad, tl.text, {
-        color: '#cccccc',
-        fontSize: '16px',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        wordWrap: { width: w - pad * 2 },
+    // Selection-box overlay: full bounds for multi-cell text labels,
+    // single-cell otherwise. Caller computes pixel-space bounds since
+    // the drawer doesn't know about the SelectedElement union.
+    if (this.selectedElement) {
+      const sel = this.selectedElement;
+      const w = sel.kind === 'text_label' ? sel.ref.width * TILE_SIZE : TILE_SIZE;
+      const h = sel.kind === 'text_label' ? sel.ref.height * TILE_SIZE : TILE_SIZE;
+      drawSelectionBox(root, {
+        x: sel.ref.x * TILE_SIZE,
+        y: sel.ref.y * TILE_SIZE,
+        w,
+        h,
       });
-      this.register(text);
     }
   }
 
-  private drawTeleport(col: number, row: number, targetPage: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_TELEPORT));
-    this.register(
-      this.add
-        .text(x, y, `→${targetPage + 1}`, {
-          color: '#ffffff',
-          fontSize: '16px',
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5),
-    );
-  }
+  // (Drawer methods moved to ./editor/drawers — renderPage() above
+  // composes them.)
 
-  private drawSpawn(col: number, row: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    // Hollow blue square + 'S' so the spawn is unmistakable in the editor.
-    // (At runtime the spawn cell is empty — only the player visual sits there.)
-    const r = this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE);
-    r.setStrokeStyle(3, COLOR_PLAYER);
-    this.register(r);
-    this.register(
-      this.add
-        .text(x, y, 'S', {
-          color: '#4ca6ff',
-          fontSize: '20px',
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5),
-    );
-  }
-
-  private drawExit(col: number, row: number): void {
-    const { x, y } = this.cellCenter(col, row);
-    this.register(this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_EXIT));
-    this.register(
-      this.add
-        .text(x, y, 'X', {
-          color: '#ffffff',
-          fontSize: '20px',
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5),
-    );
-  }
 
   // --- DOM chrome --------------------------------------------------------
 
@@ -680,14 +394,18 @@ export class EditScene extends Phaser.Scene {
     this.updateLabels();
   }
 
-  // Save back to disk via the Vite dev-server middleware. The endpoint
-  // whitelists levels/level-NN.json, so saving from a "no known path"
-  // scene falls back to a download — keeps changes recoverable when
-  // the editor is opened against an ad-hoc level (e.g. DEFAULT_LEVEL_URL).
-  private async saveLevel(): Promise<void> {
+  // Save back to disk via the Vite dev-server middleware. Returns true
+  // on success, false on any failure (so callers like the unsaved-
+  // changes modal can keep the user in the editor when a save fails
+  // mid-flow). Whitelisted paths are levels/level-NN.json; saving from
+  // a "no known path" scene falls back to a download so changes are
+  // still recoverable when the editor is opened against an ad-hoc
+  // level (e.g. DEFAULT_LEVEL_URL).
+  private async saveLevel(): Promise<boolean> {
     if (!this.levelPath) {
       this.downloadLevel();
-      return;
+      this.dirty = false;
+      return true;
     }
     const saveBtn = this.palette?.querySelector(
       '[data-action="save"]',
@@ -701,15 +419,52 @@ export class EditScene extends Phaser.Scene {
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         alert(`Save failed: ${err.error ?? response.statusText}`);
-        return;
+        return false;
       }
+      this.dirty = false;
       this.flashSaveButton(saveBtn);
+      return true;
     } catch (err) {
       alert(
         `Save failed: ${(err as Error).message}\n\n` +
           `The save endpoint only exists when running 'npm run dev'.`,
       );
+      return false;
     }
+  }
+
+  // Three-way "you have unsaved changes" modal. Returns to the caller
+  // via the two callbacks rather than a Promise so the call site can
+  // stay synchronous when the user hits Cancel. Clicking outside the
+  // dialog or hitting Esc is ignored — the user must pick an action.
+  private showUnsavedConfirm(onSave: () => void, onDiscard: () => void): void {
+    const modal = document.createElement('div');
+    modal.className = 'editor-modal';
+    modal.innerHTML = `
+      <div class="editor-modal-backdrop"></div>
+      <div class="editor-modal-content">
+        <p>You have unsaved changes to <b>${this.level.name}</b>.</p>
+        <div class="editor-modal-actions">
+          <button data-modal-action="cancel" class="editor-modal-btn">Cancel</button>
+          <button data-modal-action="discard" class="editor-modal-btn editor-modal-btn-danger">Discard</button>
+          <button data-modal-action="save" class="editor-modal-btn editor-modal-btn-primary">Save &amp; Leave</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      const action = target.getAttribute('data-modal-action');
+      if (action === 'save') {
+        modal.remove();
+        onSave();
+      } else if (action === 'discard') {
+        modal.remove();
+        onDiscard();
+      } else if (action === 'cancel') {
+        modal.remove();
+      }
+    });
   }
 
   private flashSaveButton(btn: HTMLButtonElement | null): void {
@@ -894,6 +649,7 @@ export class EditScene extends Phaser.Scene {
         const sel = this.selectedElement;
         if (sel.kind === 'spike' || sel.kind === 'cannon' || sel.kind === 'laser_cannon') {
           sel.ref.dir = elemDir as CardinalDir;
+          this.dirty = true;
         }
         this.renderPage();
         this.renderParamsPanel();
@@ -903,6 +659,7 @@ export class EditScene extends Phaser.Scene {
       if (convDir) {
         if (this.selectedElement.kind === 'conveyor') {
           this.selectedElement.ref.dir = convDir as ConveyorDir;
+          this.dirty = true;
         }
         this.renderPage();
         this.renderParamsPanel();
@@ -913,6 +670,7 @@ export class EditScene extends Phaser.Scene {
         const sel = this.selectedElement;
         if (sel.kind === 'key' || sel.kind === 'key_wall') {
           sel.ref.color = parseInt(elemColor, 10);
+          this.dirty = true;
         }
         this.renderPage();
         this.renderParamsPanel();
@@ -922,6 +680,7 @@ export class EditScene extends Phaser.Scene {
       if (lasRot) {
         if (this.selectedElement.kind === 'laser_cannon') {
           this.selectedElement.ref.rotate = lasRot as LaserRotateMode;
+          this.dirty = true;
         }
         this.renderParamsPanel();
         return;
@@ -929,6 +688,7 @@ export class EditScene extends Phaser.Scene {
       const toggle = target.getAttribute('data-elem-toggle');
       if (toggle === 'closed' && this.selectedElement.kind === 'gear') {
         this.selectedElement.ref.closed = !this.selectedElement.ref.closed;
+        this.dirty = true;
         this.renderPage();
         this.renderParamsPanel();
         return;
@@ -1012,6 +772,7 @@ export class EditScene extends Phaser.Scene {
     if (target.getAttribute('data-elem-text-input') === null) return;
     if (this.selectedElement?.kind !== 'text_label') return;
     this.selectedElement.ref.text = (target as HTMLTextAreaElement).value;
+    this.dirty = true;
     this.renderPage();
   }
 
@@ -1028,14 +789,31 @@ export class EditScene extends Phaser.Scene {
         void this.saveLevel();
         return;
       case 'menu':
+        if (this.dirty) {
+          this.showUnsavedConfirm(
+            // Save & Leave: stay in the editor if the save fails so
+            // the user can fix whatever went wrong (network, etc.).
+            async () => {
+              const ok = await this.saveLevel();
+              if (ok) this.scene.start('MenuScene');
+            },
+            // Discard & Leave: bail out without touching disk.
+            () => this.scene.start('MenuScene'),
+          );
+          return;
+        }
         this.scene.start('MenuScene');
         return;
       case 'play':
+        // Pass dirty through so it survives the Play → Edit round
+        // trip — otherwise the unsaved-changes prompt wouldn't fire
+        // after the user plays then comes back to the editor.
         this.scene.start('PlayScene', {
           level: this.level,
           pageIndex: this.currentPageIndex,
           fromEditor: true,
           levelPath: this.levelPath,
+          editorDirty: this.dirty,
         });
         return;
       case 'gear-finish-open':
@@ -1044,6 +822,7 @@ export class EditScene extends Phaser.Scene {
         if (this.gearEditState) {
           this.gearEditState.gear.closed = false;
           this.gearEditState = null;
+          this.dirty = true;
         }
         this.renderPage();
         this.renderParamsPanel();
@@ -1065,6 +844,7 @@ export class EditScene extends Phaser.Scene {
   private addPage(): void {
     const current = this.level.pages[this.currentPageIndex];
     if (!current) return;
+    this.dirty = true;
     const cols = current.tiles[0]!.length;
     const rows = current.tiles.length;
     const blank = '.'.repeat(cols);
@@ -1113,6 +893,7 @@ export class EditScene extends Phaser.Scene {
       `Delete page ${idx + 1}? This cannot be undone.`,
     );
     if (!ok) return;
+    this.dirty = true;
 
     this.level.pages.splice(idx, 1);
 
@@ -1172,275 +953,46 @@ export class EditScene extends Phaser.Scene {
     switch (this.selectedTool) {
       case 'spike':
       case 'cannon':
-        this.paramsPanel.innerHTML = this.dirParamHtml(
+        this.paramsPanel.innerHTML = dirParamHtml(
           this.toolParams[this.selectedTool],
           ['up', 'down', 'left', 'right'],
         );
         return;
       case 'conveyor':
-        this.paramsPanel.innerHTML = this.dirParamHtml(this.toolParams.conveyor, ['cw', 'ccw']);
+        this.paramsPanel.innerHTML = dirParamHtml(this.toolParams.conveyor, ['cw', 'ccw']);
         return;
       case 'portal':
       case 'key':
       case 'key_wall':
-        this.paramsPanel.innerHTML = this.colorParamHtml(this.toolParams[this.selectedTool]);
+        this.paramsPanel.innerHTML = colorParamHtml(this.toolParams[this.selectedTool]);
         return;
       case 'teleport':
-        this.paramsPanel.innerHTML = this.teleportParamHtml();
+        this.paramsPanel.innerHTML = teleportParamHtml(
+          this.toolParams.teleport,
+          this.level.pages.length,
+        );
         return;
       case 'select':
-        this.paramsPanel.innerHTML = this.selectParamHtml();
+        // Per-instance editing for the selected element, or empty when
+        // nothing is selected.
+        this.paramsPanel.innerHTML = this.selectedElement
+          ? elementParamHtml(this.selectedElement, {
+              pageCount: this.level.pages.length,
+              isEditingGearPath:
+                this.selectedElement.kind === 'gear' &&
+                this.gearEditState?.gear === this.selectedElement.ref,
+            })
+          : '';
         return;
       case 'laser_cannon':
-        this.paramsPanel.innerHTML = this.laserCannonParamHtml();
+        this.paramsPanel.innerHTML = laserCannonParamHtml(this.toolParams.laser_cannon);
         return;
       case 'text':
-        this.paramsPanel.innerHTML = this.textToolParamHtml();
+        this.paramsPanel.innerHTML = textToolParamHtml(this.toolParams.text);
         return;
       default:
         this.paramsPanel.innerHTML = '';
     }
-  }
-
-  // Tool-sticky params for the Text tool: width + height of the
-  // bounds. Text content is left at the placement default ("Text") so
-  // the user can immediately see and click the new label; the actual
-  // copy is edited per-instance via Select.
-  private textToolParamHtml(): string {
-    const tp = this.toolParams.text;
-    return `
-      <div class="palette-section-label">WIDTH</div>
-      <div class="palette-stepper">
-        <button data-param-text-w="-1" class="palette-btn palette-stepper-btn">−</button>
-        <span class="palette-stepper-value">${tp.width} cells</span>
-        <button data-param-text-w="1" class="palette-btn palette-stepper-btn">+</button>
-      </div>
-      <div class="palette-section-label">HEIGHT</div>
-      <div class="palette-stepper">
-        <button data-param-text-h="-1" class="palette-btn palette-stepper-btn">−</button>
-        <span class="palette-stepper-value">${tp.height} cells</span>
-        <button data-param-text-h="1" class="palette-btn palette-stepper-btn">+</button>
-      </div>
-    `;
-  }
-
-  // Laser cannon params: initial direction (4 cardinals) + rotate mode
-  // (None / CW / CCW) + duration & downtime steppers (0.5-second
-  // increments). duration === 0 means continuous fire — the downtime
-  // stepper is shown grayed out but still editable so it doesn't
-  // disappear from layout when the user toggles back to a finite
-  // duration.
-  private laserCannonParamHtml(): string {
-    const lc = this.toolParams.laser_cannon;
-    const dirLabels: Record<CardinalDir, string> = {
-      up: '↑', down: '↓', left: '←', right: '→',
-    };
-    const dirButtons = (['up', 'down', 'left', 'right'] as CardinalDir[])
-      .map((d) => {
-        const sel = d === lc.dir ? ' selected' : '';
-        return `<button data-param-laser-dir="${d}" class="palette-btn${sel}">${dirLabels[d]}</button>`;
-      })
-      .join('');
-    const rotLabels: Record<LaserRotateMode, string> = {
-      none: 'None', cw: 'CW', ccw: 'CCW',
-    };
-    const rotButtons = (['none', 'cw', 'ccw'] as LaserRotateMode[])
-      .map((m) => {
-        const sel = m === lc.rotate ? ' selected' : '';
-        return `<button data-param-laser-rotate="${m}" class="palette-btn${sel}">${rotLabels[m]}</button>`;
-      })
-      .join('');
-    const durLabel = lc.duration === 0 ? 'continuous' : `${lc.duration.toFixed(1)} s`;
-    const downLabel = `${lc.downtime.toFixed(1)} s`;
-    return `
-      <div class="palette-section-label">DIRECTION</div>
-      <div class="palette-grid-2">${dirButtons}</div>
-      <div class="palette-section-label">ROTATE</div>
-      <div class="palette-grid-2">${rotButtons}</div>
-      <div class="palette-section-label">DURATION</div>
-      <div class="palette-stepper">
-        <button data-param-laser-dur="-1" class="palette-btn palette-stepper-btn">−</button>
-        <span class="palette-stepper-value">${durLabel}</span>
-        <button data-param-laser-dur="1" class="palette-btn palette-stepper-btn">+</button>
-      </div>
-      <div class="palette-section-label">DOWNTIME</div>
-      <div class="palette-stepper">
-        <button data-param-laser-down="-1" class="palette-btn palette-stepper-btn">−</button>
-        <span class="palette-stepper-value">${downLabel}</span>
-        <button data-param-laser-down="1" class="palette-btn palette-stepper-btn">+</button>
-      </div>
-    `;
-  }
-
-  // Select tool params: per-element editing when something is
-  // selected; empty otherwise (Select with nothing chosen does nothing
-  // until the user clicks an element on the map).
-  private selectParamHtml(): string {
-    if (this.selectedElement) {
-      return this.elementParamHtml(this.selectedElement);
-    }
-    return '';
-  }
-
-  // Per-instance params for whichever element kind is selected.
-  // Each returns its own header label + control set; the gear case
-  // also embeds the path-edit hint when a session is open.
-  private elementParamHtml(sel: SelectedElement): string {
-    switch (sel.kind) {
-      case 'glass_wall':
-        return this.elemHeader('Glass Wall')
-          + this.elemStepperHtml('Delay', sel.ref.delay.toFixed(1) + ' s', 'delay');
-      case 'spike_block': {
-        const dur = sel.ref.duration ?? 0;
-        const down = sel.ref.downtime ?? 3.0;
-        const durLabel = dur === 0 ? 'always extended' : `${dur.toFixed(1)} s`;
-        return this.elemHeader('Spike Block')
-          + this.elemStepperHtml('Extend', durLabel, 'duration')
-          + this.elemStepperHtml('Retract', `${down.toFixed(1)} s`, 'downtime');
-      }
-      case 'spike': {
-        const dur = sel.ref.duration ?? 0;
-        const down = sel.ref.downtime ?? 3.0;
-        const durLabel = dur === 0 ? 'always extended' : `${dur.toFixed(1)} s`;
-        return this.elemHeader('Spike')
-          + this.elemDirHtml(sel.ref.dir)
-          + this.elemStepperHtml('Extend', durLabel, 'duration')
-          + this.elemStepperHtml('Retract', `${down.toFixed(1)} s`, 'downtime');
-      }
-      case 'conveyor':
-        return this.elemHeader('Conveyor')
-          + this.elemConveyorDirHtml(sel.ref.dir);
-      case 'cannon':
-        return this.elemHeader('Cannon')
-          + this.elemDirHtml(sel.ref.dir)
-          + this.elemStepperHtml('Period', sel.ref.period.toFixed(1) + ' s', 'period')
-          + this.elemStepperHtml('Bullet speed', sel.ref.bullet_speed.toFixed(1) + ' t/s', 'bullet_speed');
-      case 'turret':
-        return this.elemHeader('Turret')
-          + this.elemStepperHtml('Period', sel.ref.period.toFixed(1) + ' s', 'period')
-          + this.elemStepperHtml('Bullet speed', sel.ref.bullet_speed.toFixed(1) + ' t/s', 'bullet_speed');
-      case 'gear': {
-        const editing = this.gearEditState?.gear === sel.ref;
-        const closedLabel = sel.ref.closed ? 'Closed loop' : 'Open path';
-        const pathBlock = editing
-          ? `<div class="palette-section-label">EDIT GEAR PATH</div>
-             <div class="palette-hint">
-               Click empty cells to add waypoints.<br>
-               Click another gear to switch edit target.<br>
-               Click this gear's center to close the loop.
-             </div>
-             <button data-action="gear-finish-open" class="palette-btn palette-btn-full">Done (open)</button>`
-          : '';
-        return this.elemHeader('Gear')
-          + this.elemStepperHtml('Size', `${sel.ref.size} t`, 'size')
-          + this.elemStepperHtml('Speed', sel.ref.speed.toFixed(1) + ' t/s', 'speed')
-          + this.elemStepperHtml('Spin', sel.ref.spin.toFixed(1) + ' r/s', 'spin')
-          + `<button data-elem-toggle="closed" class="palette-btn palette-btn-full">${closedLabel}</button>`
-          + pathBlock;
-      }
-      case 'key':
-        return this.elemHeader('Key')
-          + this.elemColorHtml(sel.ref.color);
-      case 'key_wall':
-        return this.elemHeader('Key Wall')
-          + this.elemColorHtml(sel.ref.color);
-      case 'teleport': {
-        const max = this.level.pages.length - 1;
-        const v = Math.max(0, Math.min(sel.ref.target_page, max));
-        return this.elemHeader('Teleport')
-          + this.elemStepperHtml('Target page', `${v + 1} / ${max + 1}`, 'target_page');
-      }
-      case 'laser_cannon': {
-        const lc = sel.ref;
-        const durLabel = lc.duration === 0 ? 'continuous' : `${lc.duration.toFixed(1)} s`;
-        return this.elemHeader('Laser Cannon')
-          + this.elemDirHtml(lc.dir)
-          + this.elemLaserRotateHtml(lc.rotate)
-          + this.elemStepperHtml('Duration', durLabel, 'duration')
-          + this.elemStepperHtml('Downtime', lc.downtime.toFixed(1) + ' s', 'downtime');
-      }
-      case 'text_label': {
-        // The textarea uses an `input` event listener on the palette
-        // (event-delegated) rather than re-rendering on each keystroke,
-        // so typing here doesn't blow away its own focus / selection.
-        // Width / height steppers DO re-render the panel — clicking
-        // them implies the user is done typing for the moment, which
-        // matches the loss of focus the re-render incurs.
-        const ref = sel.ref;
-        // Escape HTML special chars in textarea body (preserves
-        // newlines naturally — the textarea handles \n).
-        const safeText = ref.text
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
-        return this.elemHeader('Text')
-          + this.elemStepperHtml('Width', `${ref.width} cells`, 'width')
-          + this.elemStepperHtml('Height', `${ref.height} cells`, 'height')
-          + `<div class="palette-section-label">CONTENT</div>
-             <textarea data-elem-text-input class="palette-textarea" rows="5">${safeText}</textarea>`;
-      }
-    }
-  }
-
-  private elemHeader(name: string): string {
-    return `<div class="palette-section-label">${name.toUpperCase()}</div>`;
-  }
-
-  // Direction picker for instance editing. Same 4-cardinal layout as
-  // the tool-side dirParamHtml but writes via data-elem-dir so the
-  // click router knows it targets the selected element.
-  private elemDirHtml(current: CardinalDir): string {
-    const labels: Record<CardinalDir, string> = { up: '↑', down: '↓', left: '←', right: '→' };
-    const buttons = (['up', 'down', 'left', 'right'] as CardinalDir[])
-      .map((d) => {
-        const sel = d === current ? ' selected' : '';
-        return `<button data-elem-dir="${d}" class="palette-btn${sel}">${labels[d]}</button>`;
-      })
-      .join('');
-    return `
-      <div class="palette-section-label">DIRECTION</div>
-      <div class="palette-grid-2">${buttons}</div>
-    `;
-  }
-
-  private elemConveyorDirHtml(current: ConveyorDir): string {
-    const labels: Record<ConveyorDir, string> = { cw: 'CW →', ccw: 'CCW ←' };
-    const buttons = (['cw', 'ccw'] as ConveyorDir[])
-      .map((d) => {
-        const sel = d === current ? ' selected' : '';
-        return `<button data-elem-conveyor-dir="${d}" class="palette-btn${sel}">${labels[d]}</button>`;
-      })
-      .join('');
-    return `
-      <div class="palette-section-label">DIRECTION</div>
-      <div class="palette-grid-2">${buttons}</div>
-    `;
-  }
-
-  private elemColorHtml(current: number): string {
-    const buttons = KEY_COLORS_LIGHT.map((color, i) => {
-      const hex = '#' + color.toString(16).padStart(6, '0');
-      const sel = i === current ? ' selected' : '';
-      return `<button data-elem-color="${i}" class="palette-btn palette-color${sel}" style="background:${hex}"></button>`;
-    }).join('');
-    return `
-      <div class="palette-section-label">COLOR</div>
-      <div class="palette-color-row">${buttons}</div>
-    `;
-  }
-
-  private elemLaserRotateHtml(current: LaserRotateMode): string {
-    const labels: Record<LaserRotateMode, string> = { none: 'None', cw: 'CW', ccw: 'CCW' };
-    const buttons = (['none', 'cw', 'ccw'] as LaserRotateMode[])
-      .map((m) => {
-        const sel = m === current ? ' selected' : '';
-        return `<button data-elem-laser-rotate="${m}" class="palette-btn${sel}">${labels[m]}</button>`;
-      })
-      .join('');
-    return `
-      <div class="palette-section-label">ROTATE</div>
-      <div class="palette-grid-2">${buttons}</div>
-    `;
   }
 
   // Step a numeric property on the selected element by ±1 increment.
@@ -1448,6 +1000,7 @@ export class EditScene extends Phaser.Scene {
   // Re-renders the page (some props affect visuals — gear size,
   // cannon dir) and the params panel (so the displayed value updates).
   private adjustElementProp(sel: SelectedElement, prop: string, dir: number): void {
+    this.dirty = true;
     const clamp = (v: number, min: number, max: number) =>
       Math.max(min, Math.min(v, max));
 
@@ -1483,7 +1036,8 @@ export class EditScene extends Phaser.Scene {
     } else if (sel.kind === 'text_label') {
       // Width / height step by 1 cell; clamp at 1 minimum and the
       // current page's grid dimensions so the text never extends
-      // past the level edge.
+      // past the level edge. Font size steps by 4 px in [8, 72] —
+      // 16 is the default, 32 is "double", 48 is about a tile tall.
       const page = this.level.pages[this.currentPageIndex];
       const cols = page?.tiles[0]?.length ?? 1;
       const rows = page?.tiles.length ?? 1;
@@ -1491,6 +1045,9 @@ export class EditScene extends Phaser.Scene {
         sel.ref.width = clamp(sel.ref.width + dir, 1, cols - sel.ref.x);
       } else if (prop === 'height') {
         sel.ref.height = clamp(sel.ref.height + dir, 1, rows - sel.ref.y);
+      } else if (prop === 'font_size') {
+        const cur = sel.ref.font_size ?? 16;
+        sel.ref.font_size = clamp(cur + dir * 4, 8, 72);
       }
     }
 
@@ -1498,62 +1055,6 @@ export class EditScene extends Phaser.Scene {
     this.renderParamsPanel();
   }
 
-  private elemStepperHtml(label: string, valueText: string, propName: string): string {
-    return `
-      <div class="palette-section-label">${label.toUpperCase()}</div>
-      <div class="palette-stepper">
-        <button data-elem-prop="${propName}" data-elem-step="-1" class="palette-btn palette-stepper-btn">−</button>
-        <span class="palette-stepper-value">${valueText}</span>
-        <button data-elem-prop="${propName}" data-elem-step="1" class="palette-btn palette-stepper-btn">+</button>
-      </div>
-    `;
-  }
-
-  private dirParamHtml(current: string, dirs: string[]): string {
-    const labels: Record<string, string> = {
-      up: '↑', down: '↓', left: '←', right: '→',
-      cw: 'CW →', ccw: 'CCW ←',
-    };
-    const buttons = dirs
-      .map((d) => {
-        const sel = d === current ? ' selected' : '';
-        return `<button data-param-dir="${d}" class="palette-btn${sel}">${labels[d]}</button>`;
-      })
-      .join('');
-    const gridClass = dirs.length === 4 ? 'palette-grid-2' : 'palette-grid-2';
-    return `
-      <div class="palette-section-label">DIRECTION</div>
-      <div class="${gridClass}">${buttons}</div>
-    `;
-  }
-
-  private colorParamHtml(current: number): string {
-    const buttons = KEY_COLORS_LIGHT.map((color, i) => {
-      const hex = '#' + color.toString(16).padStart(6, '0');
-      const sel = i === current ? ' selected' : '';
-      return `<button data-param-color="${i}" class="palette-btn palette-color${sel}" style="background:${hex}"></button>`;
-    }).join('');
-    return `
-      <div class="palette-section-label">COLOR</div>
-      <div class="palette-color-row">${buttons}</div>
-    `;
-  }
-
-  // Stepper for teleport's target_page. Bounded by the level's page count;
-  // the raw param value persists across selection so the user doesn't have
-  // to re-step it every time they pick the teleport tool.
-  private teleportParamHtml(): string {
-    const max = this.level.pages.length - 1;
-    const value = Math.max(0, Math.min(this.toolParams.teleport, max));
-    return `
-      <div class="palette-section-label">TARGET PAGE</div>
-      <div class="palette-stepper">
-        <button data-param-step="-1" class="palette-btn palette-stepper-btn">−</button>
-        <span class="palette-stepper-value">${value + 1} / ${max + 1}</span>
-        <button data-param-step="1" class="palette-btn palette-stepper-btn">+</button>
-      </div>
-    `;
-  }
 
   // --- pointer handlers --------------------------------------------------
 
@@ -1744,6 +1245,7 @@ export class EditScene extends Phaser.Scene {
       if (gear.x === col && gear.y === row) {
         // Click on edited-gear's home → close loop + exit edit (selection stays).
         gear.closed = true;
+        this.dirty = true;
         this.gearEditState = null;
         this.renderParamsPanel();
         return;
@@ -1773,6 +1275,7 @@ export class EditScene extends Phaser.Scene {
       if (this.isOccupied(page, col, row)) return;
       if (gear.waypoints.some((w) => w.x === col && w.y === row)) return;
       gear.waypoints.push({ x: col, y: row });
+      this.dirty = true;
       return;
     }
 
@@ -1912,6 +1415,7 @@ export class EditScene extends Phaser.Scene {
     dstCol: number,
     dstRow: number,
   ): void {
+    this.dirty = true;
     const at = (e: { x: number; y: number }) => e.x === srcCol && e.y === srcRow;
     const move = (e: { x: number; y: number }) => {
       e.x = dstCol;
@@ -1984,46 +1488,63 @@ export class EditScene extends Phaser.Scene {
 
     if (this.isOccupied(page, col, row)) return;
 
-    if (tool === 'spawn')  { page.spawn = { x: col, y: row }; return; }
+    if (tool === 'spawn')  {
+      page.spawn = { x: col, y: row };
+      this.dirty = true;
+      return;
+    }
     if (tool === 'exit')   {
       this.level.exit = { page: this.currentPageIndex, x: col, y: row };
+      this.dirty = true;
       return;
     }
 
+    // `mutated` lets us mark dirty exactly once when a branch actually
+    // appended/wrote — avoiding a false-positive dirty when the text
+    // branch's bounds-check rejects.
+    let mutated = false;
     switch (tool) {
       case 'wall':
         this.setTile(page, col, row, 'W');
-        return;
+        mutated = true;
+        break;
       case 'coin':
         this.setTile(page, col, row, 'C');
-        return;
+        mutated = true;
+        break;
       case 'glass':
         this.appendTo(page, 'glass_walls', { x: col, y: row, delay: DEFAULT_GLASS_DELAY });
-        return;
+        mutated = true;
+        break;
       case 'spike_block':
         // duration 0 = always extended (legacy behavior). User can
         // step it up via per-instance editing to enable the cycle.
         this.appendTo(page, 'spike_blocks', { x: col, y: row, duration: 0, downtime: 3.0 });
-        return;
+        mutated = true;
+        break;
       case 'spike':
         this.appendTo(page, 'spikes', {
           x: col, y: row, dir: this.toolParams.spike, duration: 0, downtime: 3.0,
         });
-        return;
+        mutated = true;
+        break;
       case 'conveyor':
         this.appendTo(page, 'conveyors', { x: col, y: row, dir: this.toolParams.conveyor });
-        return;
+        mutated = true;
+        break;
       case 'cannon':
         this.appendTo(page, 'cannons', {
           x: col, y: row, dir: this.toolParams.cannon,
           period: DEFAULT_CANNON_PERIOD, bullet_speed: DEFAULT_CANNON_BULLET_SPEED,
         });
-        return;
+        mutated = true;
+        break;
       case 'turret':
         this.appendTo(page, 'turrets', {
           x: col, y: row, period: DEFAULT_TURRET_PERIOD, bullet_speed: DEFAULT_TURRET_BULLET_SPEED,
         });
-        return;
+        mutated = true;
+        break;
       case 'laser_cannon': {
         const lc = this.toolParams.laser_cannon;
         this.appendTo(page, 'laser_cannons', {
@@ -2033,28 +1554,34 @@ export class EditScene extends Phaser.Scene {
           duration: lc.duration,
           downtime: lc.downtime,
         });
-        return;
+        mutated = true;
+        break;
       }
       case 'gear':
         this.appendTo(page, 'gears', {
           x: col, y: row, size: DEFAULT_GEAR_SIZE, speed: DEFAULT_GEAR_SPEED,
           spin: DEFAULT_GEAR_SPIN, waypoints: [], closed: false,
         });
-        return;
+        mutated = true;
+        break;
       case 'portal':
         this.placePortalPoint(page, col, row, this.toolParams.portal);
-        return;
+        mutated = true;
+        break;
       case 'key':
         this.appendTo(page, 'keys', { x: col, y: row, color: this.toolParams.key });
-        return;
+        mutated = true;
+        break;
       case 'key_wall':
         this.appendTo(page, 'key_walls', { x: col, y: row, color: this.toolParams.key_wall });
-        return;
+        mutated = true;
+        break;
       case 'teleport': {
         const max = this.level.pages.length - 1;
         const target = Math.max(0, Math.min(this.toolParams.teleport, max));
         this.appendTo(page, 'teleports', { x: col, y: row, target_page: target });
-        return;
+        mutated = true;
+        break;
       }
       case 'text': {
         const tp = this.toolParams.text;
@@ -2063,14 +1590,16 @@ export class EditScene extends Phaser.Scene {
         // applyTool guard, so this re-checks every cell including the
         // top-left to keep the loop simple.
         if (!this.isAreaClearForText(page, col, row, tp.width, tp.height, null)) {
-          return;
+          break;
         }
         this.appendTo(page, 'text_labels', {
           x: col, y: row, width: tp.width, height: tp.height, text: 'Text',
         });
-        return;
+        mutated = true;
+        break;
       }
     }
+    if (mutated) this.dirty = true;
   }
 
   // Multi-cell area-clear check used by text-label placement and drag-
@@ -2151,8 +1680,12 @@ export class EditScene extends Phaser.Scene {
   // removed. Multi-cell entities (gears with waypoints, portals with two
   // points) get their HOME / a single point removed; gears keyed off
   // their home cell, portals filter the matching point and prune empty
-  // portals. Spawn + exit are NOT erased here — they're global pointers
-  // the user must reposition with their respective tools.
+  // portals. Spawn is NOT erased — every level needs a starting cell,
+  // and there's no concept of "no spawn". Exit IS erasable: setting
+  // its page to -1 is the project's "no active exit" sentinel that
+  // every consumer (rendering, occupancy, drag-move, runtime trigger)
+  // already filters out via the `exit.page === currentPageIndex`
+  // guard. The user re-places via the Exit tool when they want one.
   //
   // Cascade: erasing a key whose color has no other keys left in the
   // level also wipes all key_walls of that color (issue #2). Multiple
@@ -2160,6 +1693,11 @@ export class EditScene extends Phaser.Scene {
   // of a color triggers the wall sweep so a stray duplicate-key delete
   // doesn't silently break the rest of the puzzle.
   private eraseAt(page: PageData, col: number, row: number): void {
+    // Conservatively mark dirty: even drag-eraser passes over empty
+    // cells will set this, but the worst case is one extra "Save?"
+    // prompt — well worth not having to detect "did anything change"
+    // across all the per-array filter calls below.
+    this.dirty = true;
     const at = (e: { x: number; y: number }) => e.x === col && e.y === row;
     const r = page.tiles[row]!;
     if (r.charAt(col) !== '.') {
@@ -2209,6 +1747,19 @@ export class EditScene extends Phaser.Scene {
           pg.key_walls = pg.key_walls.filter((w) => w.color !== color);
         }
       }
+    }
+
+    // Exit erase. Sentinel page -1 = "no active exit". The existing
+    // `exit.page === currentPageIndex` check at every consumer (the
+    // editor's drawExit / isOccupied / moveElementAt branches, plus
+    // PlayScene.buildExit / handleExit) naturally short-circuits when
+    // page is negative, so no other code needs updating.
+    if (
+      this.level.exit.page === this.currentPageIndex &&
+      this.level.exit.x === col &&
+      this.level.exit.y === row
+    ) {
+      this.level.exit = { page: -1, x: 0, y: 0 };
     }
 
     this.validateSelectedElement();
