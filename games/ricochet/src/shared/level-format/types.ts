@@ -37,6 +37,8 @@ export interface PageData {
   gears?: Gear[];
   portals?: Portal[];
   turrets?: Turret[];
+  laser_cannons?: LaserCannon[];
+  text_labels?: TextLabel[];
 }
 
 export interface Cell {
@@ -53,6 +55,11 @@ export interface Teleport extends Cell {
 
 export interface Spike extends Cell {
   dir: CardinalDir;
+  /** Optional extension cycle: extended (lethal) for `duration`,
+   *  retracted (passable) for `downtime`. Both default to 0; a duration
+   *  of 0 means "always extended" (legacy + the placement default). */
+  duration?: number;
+  downtime?: number;
 }
 
 export interface GlassWall extends Cell {
@@ -69,10 +76,12 @@ export interface Conveyor extends Cell {
   dir: ConveyorDir;
 }
 
-// SpikeBlock is just a positioned cell; no extra fields today, but kept
-// as its own type so future tuning fields can be added without touching
-// callers.
-export type SpikeBlock = Cell;
+// SpikeBlock optionally carries the same extension cycle as Spike —
+// duration of 0 means "always extended" (legacy + placement default).
+export interface SpikeBlock extends Cell {
+  duration?: number;
+  downtime?: number;
+}
 
 export interface Key extends Cell {
   color: number;
@@ -102,4 +111,27 @@ export interface Portal {
 export interface Turret extends Cell {
   period: number;
   bullet_speed: number;
+}
+
+export type LaserRotateMode = 'none' | 'cw' | 'ccw';
+
+export interface LaserCannon extends Cell {
+  /** Initial beam direction (also the only direction in 'none' rotate mode). */
+  dir: CardinalDir;
+  /** 'none' = static; 'cw' / 'ccw' = continuous rotation at LASER_ROTATION_SPEED. */
+  rotate: LaserRotateMode;
+  /** Beam-on duration in seconds. 0 = continuous fire (no off phase). */
+  duration: number;
+  /** Beam-off duration in seconds. Ignored when duration === 0. */
+  downtime: number;
+}
+
+// Decorative multi-cell text overlay. (x, y) is the top-left cell;
+// width / height are in cells. Purely visual at runtime — no body, no
+// hazard, no interaction. Used for level-author-provided hints, signs,
+// and similar in-world text.
+export interface TextLabel extends Cell {
+  width: number;
+  height: number;
+  text: string;
 }

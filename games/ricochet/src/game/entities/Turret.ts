@@ -71,10 +71,13 @@ export class Turret extends Phaser.GameObjects.Container {
     this.barrel.add(scene.add.circle(0, 0, TILE_SIZE * 0.16, COLOR_TURRET_HUB));
 
     // Static body covering the cell — the player + bullets collide with
-    // this exactly like a wall.
+    // this exactly like a wall. Container has no getTopLeft/getCenter, so
+    // body.updateFromGameObject() throws in Phaser 4 (it expects those
+    // methods to exist on the host GameObject). Set the body's top-left
+    // position manually instead.
     scene.physics.add.existing(this, true);
     this.body.setSize(TILE_SIZE, TILE_SIZE);
-    this.body.updateFromGameObject();
+    this.body.position.set(this.x - TILE_SIZE / 2, this.y - TILE_SIZE / 2);
 
     this.period = period;
     this.bulletSpeedPx = bulletSpeedTiles * TILE_SIZE;

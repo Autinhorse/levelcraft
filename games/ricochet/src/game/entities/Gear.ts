@@ -21,6 +21,10 @@ export class Gear extends Phaser.GameObjects.Container {
   private readonly spinSpeed: number;     // rotation rate, rad/sec
   private readonly path: ReadonlyArray<Phaser.Math.Vector2>;
   private readonly closed: boolean;
+  // Public so other entities can do circle-based geometry against this
+  // gear (e.g. the laser cannon clips its beam at the gear's circle
+  // boundary, not the gear's grid cell).
+  public readonly radiusPx: number;
 
   // Open-path direction; +1 forward through indices, -1 backward.
   // Ignored when closed (cycles always go forward).
@@ -67,6 +71,7 @@ export class Gear extends Phaser.GameObjects.Container {
     this.spinSpeed = spinSpeed;
     this.path = path;
     this.closed = closed;
+    this.radiusPx = radiusPx;
     if (path.length >= 2) {
       this.nextIndex = 1;  // start by moving toward the first waypoint
     }

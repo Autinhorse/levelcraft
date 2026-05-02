@@ -68,6 +68,21 @@ export const COLOR_GEAR_HUB = 0xff9933;       // bright orange (the center hub �
 export const COLOR_TELEPORT = 0xf28c33;       // orange (matches Godot COLOR_TELEPORT) — cross-page teleporter
 export const COLOR_EXIT = 0x66d973;           // green (matches Godot COLOR_EXIT) — level goal
 
+// Laser cannon — base + barrel reuse the cannon palette so the family
+// is recognizable; the hub + beam are bright red so danger reads at
+// a glance and the beam is visible against any tile color.
+export const COLOR_LASER_CANNON = 0x4d4d52;
+export const COLOR_LASER_CANNON_BARREL = 0x8c8c99;
+export const COLOR_LASER_HUB = 0xff3333;
+export const COLOR_LASER_BEAM = 0xff3333;
+// Rotation speed for cw / ccw modes. π/4 rad/s = 45°/s = one full
+// rotation in 8 seconds. Slow enough that players can plan around it.
+export const LASER_ROTATION_SPEED = Math.PI / 4;
+// Beam thickness in tile units. 0.2 ≈ 9.6 px at TILE_SIZE 48 — thin
+// enough to look like a beam, thick enough that the player AABB
+// (one tile) reliably overlaps it without sub-pixel near-misses.
+export const LASER_BEAM_THICKNESS_TILES = 0.2;
+
 // Six maximally-distinct key colors (mirrors Godot KEY_COLORS). Each
 // index pairs a "light" variant for the bright key pickup with a "dark"
 // variant for the matching key-wall (so they read as related but

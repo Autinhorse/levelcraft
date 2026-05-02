@@ -8,16 +8,334 @@
       html, body {
         margin: 0;
         padding: 0;
+        width: 100%;
+        height: 100%;
         background: #1a1d22;
         color: #cccccc;
         font-family: system-ui, -apple-system, sans-serif;
         overflow: hidden;
       }
+      /* #game must have an EXPLICIT viewport size so Phaser's FIT scale
+         mode has a fixed box to scale the canvas into. Without this the
+         parent grows to match the canvas's native size, defeating FIT. */
       #game {
+        width: 100vw;
+        height: 100vh;
+      }
+      /* Removes the default inline-block whitespace under the canvas. */
+      #game > canvas {
+        display: block;
+      }
+
+      /* --- Editor DOM overlay (EditScene + PlayScene back button) --- */
+      .editor-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 10;
+        /* The wrapper itself is click-transparent so the canvas under
+           empty space (e.g., between toolbar groups) still receives clicks.
+           Interactive elements inside opt back in. */
+        pointer-events: none;
+      }
+      .editor-topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 16px;
+        background: rgba(20, 22, 28, 0.92);
+        border-bottom: 1px solid #2a2f36;
+        pointer-events: auto;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #cccccc;
+        font-size: 14px;
+      }
+      .editor-back-wrap {
+        position: absolute;
+        top: 8px;
+        right: 16px;
+        pointer-events: auto;
+      }
+      .editor-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .editor-btn {
+        background: #2a2f36;
+        color: #cccccc;
+        border: 1px solid #3a4048;
+        padding: 6px 12px;
+        font-size: 14px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .editor-btn:hover {
+        background: #3a4048;
+        color: #ffffff;
+      }
+      .editor-btn-primary {
+        background: #4ca6ff;
+        color: #1a1d22;
+        border-color: #4ca6ff;
+      }
+      .editor-btn-primary:hover {
+        background: #6cb6ff;
+      }
+      .editor-label {
+        color: #cccccc;
+        padding: 0 4px;
+      }
+      .editor-label-muted {
+        color: #8a9098;
+        font-size: 12px;
+        letter-spacing: 1px;
+      }
+
+      /* --- Tool palette (right sidebar in edit mode) ---
+         Holds both the file/page chrome (was a top toolbar pre-Phase-13b)
+         and the placement tools. Anchored to the right so the canvas's
+         top rows stay visible during editing. */
+      .editor-palette {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 200px;
+        background: rgba(20, 22, 28, 0.92);
+        border-left: 1px solid #2a2f36;
+        pointer-events: auto;
+        overflow-y: auto;
+        padding: 10px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        color: #cccccc;
+        z-index: 11;
+        box-sizing: border-box;
+      }
+      .palette-file-label {
+        font-size: 14px;
+        color: #ffffff;
+        margin-bottom: 8px;
+        word-break: break-word;
+      }
+      .palette-page-nav {
+        display: grid;
+        grid-template-columns: 36px 1fr 36px;
+        gap: 4px;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      .palette-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        margin-bottom: 4px;
+      }
+      .palette-btn-primary {
+        background: #4ca6ff;
+        color: #1a1d22;
+        border-color: #4ca6ff;
+        margin-bottom: 8px;
+      }
+      .palette-btn-primary:hover {
+        background: #6cb6ff;
+        color: #1a1d22;
+      }
+      .palette-divider {
+        height: 1px;
+        background: #2a2f36;
+        margin: 8px 0 10px;
+      }
+      .palette-hint {
+        color: #cccccc;
+        font-size: 12px;
+        line-height: 1.4;
+        margin-bottom: 8px;
+      }
+      /* Brief "Saved!" flash on the Save button after a successful POST
+         to the dev-server save endpoint. */
+      .palette-btn-saved,
+      .palette-btn-saved:hover {
+        background: #66d973;
+        color: #1a1d22;
+        border-color: #66d973;
+      }
+      /* Per-instance text-label content editor. Lives inside the
+         params panel and updates on input (event-delegated) — no
+         re-render on keystroke, so focus + caret stick. */
+      .palette-textarea {
+        display: block;
+        width: 100%;
+        min-height: 80px;
+        padding: 6px 8px;
+        background: #1a1d22;
+        color: #ffffff;
+        border: 1px solid #3a4048;
+        border-radius: 3px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        resize: vertical;
+        box-sizing: border-box;
+      }
+      .palette-textarea:focus {
+        border-color: #4ca6ff;
+        outline: none;
+      }
+
+      /* --- Level-select menu (MenuScene) --- */
+      .menu-overlay {
+        position: fixed;
+        inset: 0;
         display: flex;
         justify-content: center;
         align-items: center;
-        min-height: 100vh;
+        background: #1a1d22;
+        z-index: 5;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #cccccc;
+      }
+      .menu-content {
+        text-align: center;
+      }
+      .menu-title {
+        font-size: 48px;
+        font-weight: 600;
+        color: #ffffff;
+        margin: 0 0 8px;
+      }
+      .menu-subtitle {
+        font-size: 16px;
+        color: #8a9098;
+        margin: 0 0 32px;
+        letter-spacing: 1px;
+      }
+      .menu-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 180px);
+        gap: 14px;
+      }
+      .menu-btn {
+        height: 96px;
+        background: #2a2f36;
+        color: #cccccc;
+        border: 2px solid #3a4048;
+        font-size: 22px;
+        font-weight: 600;
+        border-radius: 8px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.12s;
+      }
+      .menu-btn:hover {
+        background: #4ca6ff;
+        color: #1a1d22;
+        border-color: #4ca6ff;
+        transform: translateY(-2px);
+      }
+      .palette-tools {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        margin-bottom: 8px;
+      }
+      .palette-section-label {
+        color: #8a9098;
+        font-size: 10px;
+        letter-spacing: 1px;
+        margin: 4px 0;
+      }
+      .palette-btn {
+        display: block;
+        width: 100%;
+        background: #2a2f36;
+        color: #cccccc;
+        border: 1px solid #3a4048;
+        padding: 6px 4px;
+        font-size: 13px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-family: inherit;
+        margin: 0;
+        text-align: center;
+        box-sizing: border-box;
+      }
+      .palette-btn:hover {
+        background: #3a4048;
+        color: #ffffff;
+      }
+      .palette-btn.selected {
+        background: #4ca6ff;
+        color: #1a1d22;
+        border-color: #4ca6ff;
+      }
+      /* Full-width row, used for the standalone Erase button. */
+      .palette-btn-full {
+        margin-bottom: 8px;
+      }
+      .palette-grid-2 {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+      }
+      .palette-color-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+      }
+      .palette-color {
+        width: 100%;
+        height: 28px;
+        padding: 0;
+      }
+      .palette-color.selected {
+        border: 2px solid #ffffff;
+      }
+      .palette-btn-eraser {
+        background: #d84040;
+        color: #ffffff;
+        border-color: #d84040;
+      }
+      .palette-btn-eraser:hover {
+        background: #ff5050;
+      }
+      .palette-btn-eraser.selected {
+        background: #ff5050;
+        color: #ffffff;
+        border-color: #ffffff;
+      }
+      /* Params panel for the currently-selected tool. Visually separated
+         from the tool grid by a top border + extra spacing. */
+      .palette-params {
+        border-top: 1px solid #2a2f36;
+        margin-top: 12px;
+        padding-top: 12px;
+        min-height: 8px;
+      }
+      .palette-params:empty {
+        border-top: none;
+        margin-top: 0;
+        padding-top: 0;
+      }
+      .palette-stepper {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .palette-stepper-btn {
+        flex: 0 0 auto;
+        width: 36px;
+        font-size: 16px;
+        font-weight: bold;
+      }
+      .palette-stepper-value {
+        flex: 1 1 auto;
+        text-align: center;
+        font-family: monospace;
+        font-size: 14px;
+        color: #ffffff;
       }
     </style>
   </head>

@@ -21,6 +21,7 @@ import {
 import { Bullet } from '../entities/Bullet';
 import { Cannon } from '../entities/Cannon';
 import { Gear } from '../entities/Gear';
+import { LaserCannon } from '../entities/LaserCannon';
 import { CONVEYOR_DIR_DATA_KEY, Player, PlayerState } from '../entities/Player';
 import { Portal } from '../entities/Portal';
 import { Turret } from '../entities/Turret';
@@ -105,6 +106,24 @@ export class PlayScene extends Phaser.Scene {
   // tracks the player. Built before the player exists, so PlayScene
   // calls turret.setPlayer() once player is constructed.
   private turrets: Turret[] = [];
+  // Laser cannons: wall-like, with a beam that raycasts each frame and
+  // kills the player on segment-vs-AABB overlap. Like turrets, they're
+  // added to the walls group so the player + bullets collide with the
+  // base cell.
+  private laserCannons: LaserCannon[] = [];
+  // Spikes / spike-blocks with duration > 0: tracked for the extend /
+  // retract cycle. Each entry holds the lethal rect (the only part
+  // that toggles — for directional spikes the wall-plate is always-on
+  // and lives separately in the walls group). Toggling flips the
+  // visual + the static body's `enable` flag so collision and overlap
+  // both stop while retracted.
+  private timedSpikes: Array<{
+    visual: Phaser.GameObjects.Rectangle;
+    duration: number;
+    downtime: number;
+    firing: boolean;
+    phaseTimer: number;
+  }> = [];
   // Teleports + exit use the no-body distance-trigger pattern so the
   // player passes through them visually without their physics body
   // tripping FLYING_H wall-detection (same trick as coins/keys).
@@ -117,6 +136,18 @@ export class PlayScene extends Phaser.Scene {
   private currentPageIndex = DEFAULT_PAGE_INDEX;
   private shouldFadeIn = false;
   private loadedLevel!: LevelData;
+  // Set when init() receives an in-memory level (the editor's "Play"
+  // hand-off). Non-null means: skip preload's file fetch and use the
+  // provided level; restarts (cross-page teleports) re-pass it through
+  // scene.restart so it survives across page transitions.
+  private providedLevel: LevelData | null = null;
+  // True iff PlayScene was launched from EditScene — surfaces a "Back
+  // to Editor" button so the user can hop back without a refresh.
+  private launchedFromEditor = false;
+  // Disk path of the level being played, when launched from the editor.
+  // Passed back to EditScene on the "back" round-trip so its Save
+  // button still knows which file to write to.
+  private levelPath: string | null = null;
   // Black overlay for transition fade-out / fade-in. Pinned to the
   // camera (scrollFactor 0) so it covers the whole viewport regardless
   // of the centered-room camera scroll.
@@ -124,27 +155,44 @@ export class PlayScene extends Phaser.Scene {
   private transitioning = false;
   private debugText!: Phaser.GameObjects.Text;
   private hudText!: Phaser.GameObjects.Text;
+  // DOM "Back to Editor" button — only shown when launched from EditScene.
+  private backButton: HTMLDivElement | null = null;
 
   constructor() {
     super('PlayScene');
   }
 
-  // Receives data from scene.restart on cross-page transitions. First
-  // boot has no data, so falls back to DEFAULT_PAGE_INDEX with no
-  // fade-in (instant initial render).
-  init(data?: { pageIndex?: number; fadeIn?: boolean }): void {
+  // Receives data from scene.restart on cross-page transitions and from
+  // EditScene's "Play" hand-off. First boot has no data, so falls back to
+  // DEFAULT_PAGE_INDEX with no fade-in (instant initial render).
+  init(data?: {
+    pageIndex?: number;
+    fadeIn?: boolean;
+    level?: LevelData;
+    fromEditor?: boolean;
+    levelPath?: string;
+  }): void {
     this.startPageIndex = data?.pageIndex ?? DEFAULT_PAGE_INDEX;
     this.shouldFadeIn = data?.fadeIn ?? false;
+    this.providedLevel = data?.level ?? null;
+    // Sticky: once launched from the editor, in-game page transitions
+    // preserve the flag (restart-through-transitionToPage re-passes it).
+    this.launchedFromEditor = data?.fromEditor ?? false;
+    this.levelPath = data?.levelPath ?? null;
   }
 
   preload(): void {
-    this.load.json(LEVEL_KEY, DEFAULT_LEVEL_URL);
+    // Skip the file fetch when an in-memory level was handed to us —
+    // the editor's level may be unsaved and not yet on disk.
+    if (!this.providedLevel) {
+      this.load.json(LEVEL_KEY, DEFAULT_LEVEL_URL);
+    }
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(COLOR_BACKGROUND);
 
-    const raw = this.cache.json.get(LEVEL_KEY) as unknown;
+    const raw = (this.providedLevel ?? this.cache.json.get(LEVEL_KEY)) as unknown;
     this.loadedLevel = validateLevel(raw, DEFAULT_LEVEL_URL);
     this.currentPageIndex = this.startPageIndex;
     const page = this.loadedLevel.pages[this.currentPageIndex];
@@ -178,6 +226,8 @@ export class PlayScene extends Phaser.Scene {
     this.gears = [];
     this.portals = [];
     this.turrets = [];
+    this.laserCannons = [];
+    this.timedSpikes = [];
     this.teleports = [];
     this.exit = null;
     this.buildWalls(page);
@@ -191,6 +241,8 @@ export class PlayScene extends Phaser.Scene {
     this.buildGears(page);
     this.buildPortals(page);
     this.buildTurrets(page);
+    this.buildLaserCannons(page);
+    this.buildTextLabels(page);
     this.buildTeleports(page);
     this.buildExit();
 
@@ -310,6 +362,41 @@ export class PlayScene extends Phaser.Scene {
         duration: FADE_DURATION_MS,
       });
     }
+
+    if (this.launchedFromEditor) {
+      this.buildBackButton();
+    }
+    // Tear down DOM additions on shutdown so they don't linger after a
+    // scene switch (back to editor) or hot reload.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.destroyBackButton());
+    this.events.once(Phaser.Scenes.Events.DESTROY, () => this.destroyBackButton());
+  }
+
+  private buildBackButton(): void {
+    if (this.backButton) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'editor-overlay';
+    wrap.innerHTML = `
+      <div class="editor-back-wrap">
+        <button class="editor-btn">◀ Edit</button>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+    this.backButton = wrap;
+    wrap.querySelector('button')?.addEventListener('click', () => {
+      this.scene.start('EditScene', {
+        level: this.providedLevel ?? this.loadedLevel,
+        pageIndex: this.currentPageIndex,
+        levelPath: this.levelPath ?? undefined,
+      });
+    });
+  }
+
+  private destroyBackButton(): void {
+    if (this.backButton) {
+      this.backButton.remove();
+      this.backButton = null;
+    }
   }
 
   update(time: number, delta: number): void {
@@ -330,6 +417,32 @@ export class PlayScene extends Phaser.Scene {
     }
     for (const turret of this.turrets) {
       turret.tick(dt);
+    }
+    for (const laser of this.laserCannons) {
+      laser.tick(dt);
+      // Beam-vs-player kill: arcade physics has no rotated-body support,
+      // so the laser does its own segment-vs-AABB test. One break is
+      // enough — die() is idempotent on already-dead state.
+      if (laser.checkPlayerHit(this.player)) {
+        this.player.die();
+      }
+    }
+    // Timed spikes: extend / retract cycle. Only the lethal rect
+    // toggles. For spike_blocks, the small central plate stays in
+    // `walls` permanently — it provides the "small cube blocks the
+    // player when retracted" behavior without any per-frame body
+    // bookkeeping. While the spike is extended, the player dies on
+    // contact and `die()` clears checkCollision, so the dying body
+    // passes the plate harmlessly.
+    for (const ts of this.timedSpikes) {
+      ts.phaseTimer -= dt;
+      if (ts.phaseTimer <= 0) {
+        ts.firing = !ts.firing;
+        ts.phaseTimer = ts.firing ? ts.duration : ts.downtime;
+        ts.visual.setVisible(ts.firing);
+        const body = ts.visual.body as Phaser.Physics.Arcade.StaticBody;
+        body.enable = ts.firing;
+      }
     }
     // Tick all live bullets (decrements ignoreTimer + lifetime).
     this.bullets.getChildren().forEach((b) => {
@@ -403,15 +516,16 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
     for (const spike of page.spikes) {
-      this.makeSpike(spike.x, spike.y, spike.dir);
+      const lethalRect = this.makeSpike(spike.x, spike.y, spike.dir);
+      this.maybeRegisterTimedSpike(lethalRect, spike.duration, spike.downtime);
     }
   }
 
-  private makeSpike(col: number, row: number, dir: CardinalDir): void {
+  private makeSpike(col: number, row: number, dir: CardinalDir): Phaser.GameObjects.Rectangle {
     const layout = SPIKE_LAYOUT[dir];
     // Plate first (visually beneath the spike where they overlap), spike on top.
     this.makeSpikePart(col, row, layout.plate, COLOR_SPIKE_PLATE, /* hazard= */ false);
-    this.makeSpikePart(col, row, layout.spike, COLOR_SPIKE, /* hazard= */ true);
+    return this.makeSpikePart(col, row, layout.spike, COLOR_SPIKE, /* hazard= */ true);
   }
 
   private makeSpikePart(
@@ -420,7 +534,7 @@ export class PlayScene extends Phaser.Scene {
     rect: Rect,
     color: number,
     hazard: boolean,
-  ): void {
+  ): Phaser.GameObjects.Rectangle {
     const w = rect.w * TILE_SIZE;
     const h = rect.h * TILE_SIZE;
     const x = col * TILE_SIZE + rect.x * TILE_SIZE + w / 2;
@@ -436,6 +550,27 @@ export class PlayScene extends Phaser.Scene {
     const body = visual.body as Phaser.Physics.Arcade.StaticBody;
     body.setSize(w, h);
     body.updateFromGameObject();
+    return visual;
+  }
+
+  // Adds the rect to the timed-spike list IFF duration > 0. Static
+  // (always-extended) spikes are skipped — no toggle work needed each
+  // frame, matching the legacy zero-overhead behavior.
+  private maybeRegisterTimedSpike(
+    visual: Phaser.GameObjects.Rectangle,
+    duration: number | undefined,
+    downtime: number | undefined,
+  ): void {
+    const dur = duration ?? 0;
+    if (dur <= 0) return;
+    const down = downtime ?? 3.0;
+    this.timedSpikes.push({
+      visual,
+      duration: dur,
+      downtime: down,
+      firing: true,
+      phaseTimer: dur,
+    });
   }
 
   private buildGlassWalls(page: PageData): void {
@@ -460,17 +595,57 @@ export class PlayScene extends Phaser.Scene {
     body.updateFromGameObject();
   }
 
-  // First player contact starts the break timer; subsequent contacts
-  // before destruction are no-ops. The wall keeps blocking through the
-  // delay; on expiry it just disappears (the static body + visual are
-  // destroyed together).
+  // First player contact starts the break timer for the WHOLE connected
+  // shatter group: 4-adjacent glass walls flood-filled from the touched
+  // cell. Reads physically as "this row/pane of glass is one barrier and
+  // it's all cracked" instead of "pop, pop, pop" as the player traverses
+  // each cell. Already-triggered members are skipped so neighbouring
+  // groups touched in the same frame don't double-schedule.
   private triggerGlassWall(glass: Phaser.GameObjects.GameObject): void {
     if (glass.getData('triggered')) {
       return;
     }
-    glass.setData('triggered', true);
-    const delaySec = (glass.getData('delay') as number) ?? 1.0;
-    this.time.delayedCall(delaySec * 1000, () => glass.destroy());
+    const group = this.findGlassGroup(glass as Phaser.GameObjects.Rectangle);
+    for (const member of group) {
+      if (member.getData('triggered')) continue;
+      member.setData('triggered', true);
+      const delaySec = (member.getData('delay') as number) ?? 1.0;
+      this.time.delayedCall(delaySec * 1000, () => member.destroy());
+    }
+  }
+
+  // BFS over 4-adjacent glass-wall cells starting from `start`. Cell key
+  // is `col,row` derived from each rect's center position (each wall is
+  // 1×1 tile, axis-aligned, so floor(x/TILE) gives the column).
+  private findGlassGroup(
+    start: Phaser.GameObjects.Rectangle,
+  ): Phaser.GameObjects.Rectangle[] {
+    const cellMap = new Map<string, Phaser.GameObjects.Rectangle>();
+    for (const obj of this.glassWalls.getChildren()) {
+      const gw = obj as Phaser.GameObjects.Rectangle;
+      const col = Math.floor(gw.x / TILE_SIZE);
+      const row = Math.floor(gw.y / TILE_SIZE);
+      cellMap.set(`${col},${row}`, gw);
+    }
+    const result: Phaser.GameObjects.Rectangle[] = [];
+    const visited = new Set<string>();
+    const queue: { col: number; row: number }[] = [
+      { col: Math.floor(start.x / TILE_SIZE), row: Math.floor(start.y / TILE_SIZE) },
+    ];
+    while (queue.length > 0) {
+      const { col, row } = queue.shift()!;
+      const key = `${col},${row}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      const gw = cellMap.get(key);
+      if (!gw) continue;
+      result.push(gw);
+      queue.push({ col: col + 1, row });
+      queue.push({ col: col - 1, row });
+      queue.push({ col, row: row + 1 });
+      queue.push({ col, row: row - 1 });
+    }
+    return result;
   }
 
   private buildSpikeBlocks(page: PageData): void {
@@ -478,26 +653,51 @@ export class PlayScene extends Phaser.Scene {
       return;
     }
     for (const sb of page.spike_blocks) {
-      this.makeSpikeBlock(sb.x, sb.y);
+      const spike = this.makeSpikeBlock(sb.x, sb.y);
+      this.maybeRegisterTimedSpike(spike, sb.duration, sb.downtime);
     }
   }
 
-  private makeSpikeBlock(col: number, row: number): void {
+  // Spike block is two independent bodies:
+  //   spike — full-cell rect in `hazards` (overlap-kills, no collider).
+  //           When extended, the player walks in and dies on contact;
+  //           there's no physical block, just lethal contact.
+  //           Toggled by the timer (visible+enabled while extended).
+  //   plate — small central cube in `walls` (collider, no kill).
+  //           ALWAYS active. While the spike is extended, the player
+  //           dies before reaching the plate (and `die()` disables
+  //           body collision so the dying body passes through it).
+  //           While the spike is retracted, the plate is the only
+  //           obstacle in the cell — the small cube blocks the player.
+  // Always-on plate avoids the one-frame race that toggling caused
+  // (player flying past during the body re-enable propagation).
+  private makeSpikeBlock(col: number, row: number): Phaser.GameObjects.Rectangle {
     const x = (col + 0.5) * TILE_SIZE;
     const y = (row + 0.5) * TILE_SIZE;
-    // Full-cell red — the entire footprint is lethal AND solid (block +
-    // kill). The killableWalls group has both a collider and an overlap
-    // attached.
-    const visual = this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_SPIKE);
-    this.killableWalls.add(visual);
-    const body = visual.body as Phaser.Physics.Arcade.StaticBody;
-    body.setSize(TILE_SIZE, TILE_SIZE);
-    body.updateFromGameObject();
 
-    // Decorative central plate (visual only, no body) — matches the
-    // Godot version's "spikes radiating from a central core" reading.
-    const plateSize = TILE_SIZE / 3;
-    this.add.rectangle(x, y, plateSize, plateSize, COLOR_SPIKE_PLATE);
+    const spike = this.add.rectangle(x, y, TILE_SIZE, TILE_SIZE, COLOR_SPIKE);
+    this.hazards.add(spike);
+    const spikeBody = spike.body as Phaser.Physics.Arcade.StaticBody;
+    spikeBody.setSize(TILE_SIZE, TILE_SIZE);
+    spikeBody.updateFromGameObject();
+
+    // Plate width is intentionally 2/3 tile rather than 1/3. Phaser's
+    // ProcessX.Set (in node_modules/phaser/src/physics/arcade/) picks
+    // separation direction by shortest-distance, NOT by velocity. When
+    // a fast-moving player overshoots more than halfway through a
+    // small static body in one frame, the shorter exit is forward —
+    // Phaser pushes the player out the far side, "tunneling" them
+    // through the cube. Math: to keep `body1OnLeft = false` for a
+    // player width 48 moving 32 px/frame, plate width must be > 16.
+    // 2/3 tile = 32 px gives comfortable margin even with mild FPS dips.
+    const plateSize = TILE_SIZE * 2 / 3;
+    const plate = this.add.rectangle(x, y, plateSize, plateSize, COLOR_SPIKE_PLATE);
+    this.walls.add(plate);
+    const plateBody = plate.body as Phaser.Physics.Arcade.StaticBody;
+    plateBody.setSize(plateSize, plateSize);
+    plateBody.updateFromGameObject();
+
+    return spike;
   }
 
   private buildConveyors(page: PageData): void {
@@ -648,6 +848,62 @@ export class PlayScene extends Phaser.Scene {
     }
   }
 
+  // Beam-blocker check shared by every laser cannon on this page.
+  // Queries live state — glass walls broken mid-play / key walls
+  // removed after pickup stop blocking once they're gone. Out-of-
+  // bounds counts as blocking so the beam terminates at the level
+  // edge instead of running for full max-range.
+  private isLaserBlocker = (col: number, row: number): boolean => {
+    const page = this.loadedLevel.pages[this.currentPageIndex];
+    if (!page) return true;
+    if (row < 0 || col < 0) return true;
+    if (row >= page.tiles.length) return true;
+    if (col >= page.tiles[0]!.length) return true;
+    // walls group covers regular walls + cannons + turrets + laser
+    // cannons themselves (they're all added to walls). The other three
+    // groups are checked individually because they're separate.
+    const cx = (col + 0.5) * TILE_SIZE;
+    const cy = (row + 0.5) * TILE_SIZE;
+    const groupHasCell = (group: Phaser.Physics.Arcade.StaticGroup): boolean =>
+      group.getChildren().some((child) => {
+        const obj = child as Phaser.GameObjects.GameObject & { x?: number; y?: number };
+        return obj.x === cx && obj.y === cy;
+      });
+    return (
+      groupHasCell(this.walls) ||
+      groupHasCell(this.glassWalls) ||
+      groupHasCell(this.killableWalls) ||
+      groupHasCell(this.keyWalls) ||
+      // Hazards include the spike_block's full-cell lethal rect (centered
+      // on the cell, so groupHasCell matches). Directional spikes also
+      // live in hazards but their rects are off-center per SPIKE_LAYOUT,
+      // so the cx/cy equality test naturally excludes them — the laser
+      // passes over a directional spike's cell, only stopping at solids.
+      groupHasCell(this.hazards)
+    );
+  };
+
+  private buildLaserCannons(page: PageData): void {
+    if (!page.laser_cannons) {
+      return;
+    }
+    for (const lc of page.laser_cannons) {
+      const laser = new LaserCannon(
+        this,
+        lc.x,
+        lc.y,
+        lc.dir,
+        lc.rotate,
+        lc.duration,
+        lc.downtime,
+        this.isLaserBlocker,
+        this.gears,
+      );
+      this.walls.add(laser);
+      this.laserCannons.push(laser);
+    }
+  }
+
   private buildPortals(page: PageData): void {
     if (!page.portals) {
       return;
@@ -694,6 +950,30 @@ export class PlayScene extends Phaser.Scene {
         g.closed,
       );
       this.gears.push(gear);
+    }
+  }
+
+  // Decorative multi-cell text overlays. No body, no interaction —
+  // pure visual. The cell-bounds outline drawn by the editor is
+  // dropped at runtime; only the typed copy renders.
+  private buildTextLabels(page: PageData): void {
+    if (!page.text_labels) {
+      return;
+    }
+    const pad = 4;
+    for (const tl of page.text_labels) {
+      if (tl.text.length === 0) continue;
+      this.add.text(
+        tl.x * TILE_SIZE + pad,
+        tl.y * TILE_SIZE + pad,
+        tl.text,
+        {
+          color: '#cccccc',
+          fontSize: '16px',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          wordWrap: { width: tl.width * TILE_SIZE - pad * 2 },
+        },
+      );
     }
   }
 
@@ -744,28 +1024,100 @@ export class PlayScene extends Phaser.Scene {
   // AABB-style trigger check for teleports + exit (same pattern as
   // coins / keys). No-op while a transition is already in progress so
   // a single touch can't queue multiple page jumps.
+  //
+  // Two thresholds, intentionally different:
+  //   - Teleports: half-tile (player CENTER must be inside the cell).
+  //     Teleports are mid-air navigation; near-miss triggers would
+  //     teleport the player against their intent.
+  //   - Exit: full-tile (player BODY must overlap the cell). The player
+  //     is deliberately seeking the exit, so a 24-px dead zone on each
+  //     side of the cell — where the player visually overlaps but the
+  //     center-only check still fails — was just frustration.
   private checkPageTriggers(): void {
     if (this.transitioning) {
       return;
     }
     const px = this.player.x;
     const py = this.player.y;
-    const t = TILE_SIZE * 0.5;  // half-tile threshold; exit + teleport are full-cell
+    const teleportT = TILE_SIZE * 0.5;
     for (const tp of this.teleports) {
-      if (Math.abs(tp.x - px) < t && Math.abs(tp.y - py) < t) {
+      if (Math.abs(tp.x - px) < teleportT && Math.abs(tp.y - py) < teleportT) {
         this.transitionToPage(tp.targetPage);
         return;
       }
     }
-    if (this.exit && Math.abs(this.exit.x - px) < t && Math.abs(this.exit.y - py) < t) {
-      this.transitionToPage(this.exit.targetPage);
+    const exitT = TILE_SIZE;
+    if (this.exit && Math.abs(this.exit.x - px) < exitT && Math.abs(this.exit.y - py) < exitT) {
+      this.handleExit();
     }
+  }
+
+  // End-of-level handler. Editor-launched runs return to EditScene on
+  // the exit page (so the user can keep iterating). Standalone runs fade
+  // to a "LEVEL COMPLETE" screen with a click-to-restart prompt — a
+  // proper end-of-level UX is a future phase.
+  private handleExit(): void {
+    if (this.transitioning) return;
+    this.transitioning = true;
+    this.tweens.add({
+      targets: this.fadeOverlay,
+      alpha: 1,
+      duration: FADE_DURATION_MS,
+      onComplete: () => {
+        if (this.launchedFromEditor) {
+          this.scene.start('EditScene', {
+            level: this.providedLevel ?? this.loadedLevel,
+            pageIndex: this.loadedLevel.exit.page,
+            levelPath: this.levelPath ?? undefined,
+          });
+        } else {
+          this.showLevelComplete();
+        }
+      },
+    });
+  }
+
+  private showLevelComplete(): void {
+    this.add
+      .text(
+        this.scale.gameSize.width / 2,
+        this.scale.gameSize.height / 2 - 24,
+        'LEVEL COMPLETE',
+        {
+          color: '#66d973',
+          fontSize: '64px',
+          fontStyle: 'bold',
+          fontFamily: 'system-ui, sans-serif',
+        },
+      )
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1001);
+    this.add
+      .text(
+        this.scale.gameSize.width / 2,
+        this.scale.gameSize.height / 2 + 36,
+        'Click anywhere to restart',
+        {
+          color: '#cccccc',
+          fontSize: '20px',
+          fontFamily: 'system-ui, sans-serif',
+        },
+      )
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1001);
+    this.input.once('pointerdown', () => {
+      this.scene.restart({ pageIndex: 0 });
+    });
   }
 
   // Cross-page transition. Fades to black, then scene.restart with the
   // target page index — restart re-runs init/preload/create cleanly,
   // tearing down all entities for free. The new scene fades in via the
-  // shouldFadeIn flag we pass through init data.
+  // shouldFadeIn flag we pass through init data. If the level was
+  // provided in-memory (editor hand-off), re-pass it so it survives the
+  // restart instead of falling back to the on-disk file.
   private transitionToPage(targetPage: number): void {
     if (
       targetPage < 0 ||
@@ -780,7 +1132,17 @@ export class PlayScene extends Phaser.Scene {
       alpha: 1,
       duration: FADE_DURATION_MS,
       onComplete: () => {
-        this.scene.restart({ pageIndex: targetPage, fadeIn: true });
+        const restartData: {
+          pageIndex: number;
+          fadeIn: boolean;
+          level?: LevelData;
+          fromEditor?: boolean;
+          levelPath?: string;
+        } = { pageIndex: targetPage, fadeIn: true };
+        if (this.providedLevel) restartData.level = this.providedLevel;
+        if (this.launchedFromEditor) restartData.fromEditor = true;
+        if (this.levelPath) restartData.levelPath = this.levelPath;
+        this.scene.restart(restartData);
       },
     });
   }

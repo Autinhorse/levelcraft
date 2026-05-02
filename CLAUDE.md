@@ -2,32 +2,18 @@
 
 > This file is the canonical project context. Claude Code should read this **before any other file** to understand what we're building, why, and what constraints apply.
 
----
-
-## TL;DR
-
 **LevelCraft** is a platform for player-created game levels. It hosts multiple game types as sub-products. The first publicly shipped game will be **LevelCraft: Ricochet** (a wall-bouncing pixel platformer).
 
-**Current state:** A Godot project that implements the "play" part of an existing Mario-style platformer (with World 1's first 4 levels and roughly half the visual variety of Super Mario Bros 1). The "maker" (level editor) part is essentially zero. **This existing game will be archived** — see "Why Archive" below — to focus all energy on shipping Ricochet first.
 
-**Strategic context:** LevelCraft is a **technical and operational rehearsal** for a larger product called **GameByTalk** (an AI-driven game creation tool, not in this repo). Lessons learned here will be applied there.
+## The Things in This Repo's Mental Model
 
----
-
-## The Four Things in This Repo's Mental Model
-
-### 1. GameByTalk (the real long-term goal — NOT in this repo)
-- AI-driven, lets users create games by chatting with an AI
-- High-tech, ambitious, requires payment systems and complex AI infrastructure
-- **We are NOT building this here.** Do NOT add features that "look ahead" to GameByTalk.
-
-### 2. LevelCraft (this repo — the rehearsal product)
+### 1. LevelCraft (this repo — the rehearsal product)
 - A community platform where players hand-design levels using a visual editor
 - Hosts multiple game types as sub-products
 - Lower risk than GameByTalk, used to validate user systems / content systems / community mechanics
 - **The point is not just the product itself — it's the experience and lessons that will inform GameByTalk.**
 
-### 3. LevelCraft: Ricochet (this repo's first publicly shipped game — top priority)
+### 2. LevelCraft: Ricochet (this repo's first publicly shipped game — top priority)
 - A 2D tile-based platformer with a deliberate, launch-and-stop movement mechanic
 - The player is a small robot character with a 1×1 collision box, on a grid of solid tiles
 - **Floor state (input accepted):** arrow keys launch the player at a constant speed in that direction. Left/right first lift the player one cell, then fly horizontally. Up flies straight up. Once launched, keyboard input is locked.
@@ -35,26 +21,8 @@
 - **Jump (Space):** vertical jump of 2 cells from the floor. During **both ascent and descent of the jump**, keyboard input is accepted — pressing any arrow key launches in that direction from the current mid-air position. So a jump lets the player choose where to launch from above floor level.
 - Hazards kill the player; special tiles (sticky, teleporter, etc.) trigger their own behaviors.
 - See `games/ricochet/design/design.md` for the full game design.
+- Built with **Phaser 4 + TypeScript + Vite** in `games/ricochet/`. See "Ricochet Engine" below for layout and Phaser-specific docs.
 - **This is the first concrete game shipped on the LevelCraft platform**
-
-### 4. The Archived Jump Game (in this repo, but on hold)
-- An existing Godot project with World 1 (4 levels) of a Mario-style jumping platformer
-- Implements roughly half of Super Mario Bros 1's tiles/entities/mechanics
-- **Has no level editor yet** (would require significant additional work)
-- **To be archived, NOT actively developed** — see "Why Archive" below
-
----
-
-## Why Archive the Jump Game
-
-The founder's analysis (which informs this decision):
-- Implementing a Mario Maker-style editor for the existing jump game would be **significantly more work** than building Ricochet from scratch (jumping platformer mechanics are richer; the editor UX is more complex)
-- Ricochet has a **simpler, more constrained mechanic** (4-direction dash, hits wall, stops) that maps cleanly to grid-based level data
-- **Shipping a complete small game beats shipping half of an ambitious one**
-- The "doubter response" public traction story is cleaner with one focused game shipped quickly
-- The jump game's existing code is a learning artifact — it's not lost. It moves to `games/_archive_jump/` and can be revisited later under a proper non-Mario brand
-
-**This is not a failure to ship the jump game. This is choosing to ship Ricochet first because it's the right product to ship now.**
 
 ---
 
@@ -63,17 +31,6 @@ The founder's analysis (which informs this decision):
 ### Always use:
 - **Platform name:** `LevelCraft`
 - **First game (active development):** `LevelCraft: Ricochet` (or just `Ricochet`)
-- **Archived game:** Refer to as "the archived jump game" or "the legacy platformer". **Do not give it a real product name yet** — that decision happens later if/when it's revived.
-
-### Never use:
-- ❌ `Blitz Breaker` (trademarked, copyright risk — Ricochet is inspired by but legally distinct from)
-- ❌ `Mario`, `Super Mario`, `Mario Maker` (Nintendo IP — extremely litigious)
-- ❌ Visual elements that resemble Mario IP (mushrooms, question blocks, pipes, koopa-like enemies, fire flowers, plumber characters)
-
-### What's safe:
-- ✅ The mechanics themselves (game mechanics are not copyrightable)
-- ✅ Generic platformer elements (spikes, buttons, doors, switches)
-- ✅ Original art that's clearly distinct from Nintendo and Blitz Breaker
 
 **When in doubt, err toward making things look and feel original.**
 
@@ -91,7 +48,7 @@ The founder has established a unified visual style for the LevelCraft platform:
 
 **Rules for visual asset development:**
 
-- ✅ Both Ricochet and (future revival of) the archived jump game share this **visual language**
+- ✅ All current and future LevelCraft games share this **visual language**
 - ✅ But **asset files themselves are NOT shared** between games — each game gets its own assets, generated separately
 - ✅ The founder uses ChatGPT (or similar) to generate concrete assets per game
 - ✅ When prompting for new assets, reference: *"the LevelCraft style — grayscale palette (#000–#FFF), sci-fi robot/tech aesthetic, hand-illustrated 64×64 sprites with dark-to-light gradient shading"*
@@ -100,8 +57,6 @@ The founder has established a unified visual style for the LevelCraft platform:
 - Same style → unified LevelCraft platform brand (players recognize the family)
 - Different assets → each game has its own visual identity within the brand
 - AI-generating fresh assets per game is cheap, so duplication isn't a cost concern
-
-**Concretely, this means:** When building Ricochet, generate **new** robot character sprites, enemy designs, and tile art in the same style as the archived jump game, but with distinct designs. Don't copy asset files from `_archive_jump/`.
 
 ---
 
@@ -123,28 +78,21 @@ levelcraft.gg/u/{username}              User profile (cross-game)
 - Level IDs: short alphanumeric (6–8 chars), like `aB3xK9`. NOT sequential integers, NOT UUIDs.
 
 ### Repository Structure
-The current single Godot project should be reorganized:
 
 ```
 levelcraft/                          (monorepo root)
 ├── CLAUDE.md                        (this file — strategic context)
-├── MIGRATION.md                     (migration steps from current state)
-├── PROJECT-OVERVIEW.md              (high-level summary; supplements the existing README.md)
-├── README.md                        (existing repo README — left as-is unless edited intentionally)
+├── README.md                        (repo README)
 ├── games/
-│   ├── _archive_jump/               (existing project, moved here, frozen)
-│   └── ricochet/                    (new Godot project, fresh start)
+│   └── ricochet/                    (Phaser 4 + TS + Vite project — see "Ricochet Engine" below)
 ├── web/
 │   ├── frontend/                    (planned, not started)
 │   └── backend/                     (planned, not started)
-├── shared/
-│   └── level-schema/                (data formats — see below)
 └── docs/
     ├── lessons.md                   (lessons learned, fed into GameByTalk)
-    └── decisions.md                 (architecture decision records)
+    ├── decisions.md                 (architecture decision records)
+    └── phaser-skills/               (on-demand Phaser API references — read when needed, not auto-loaded)
 ```
-
-See `MIGRATION.md` for step-by-step migration instructions.
 
 ### Database Schema (Core Tables)
 
@@ -178,13 +126,36 @@ levels (
 ```
 
 ### Tech Stack
-- **Game engine:** Godot (existing project uses it)
-- **Game export target:** HTML5 (Godot's web export) so games run in browser
+- **Game engine:** Phaser 4 (4.1.0+ "Salusa") — WebGL renderer, Arcade Physics
+- **Game language / build:** TypeScript + Vite (dev server + bundler)
+- **Game distribution:** browser-native; future native desktop via Tauri, mobile via Capacitor (same web codebase wrapped)
 - **Web frontend:** TBD — recommend Next.js + TypeScript
 - **Backend:** TBD — Node, Bun, or Go
 - **Database:** Postgres (Supabase recommended for hosted Postgres + auth)
 - **Auth:** Email + at least one OAuth (Google or Discord recommended)
 - **Hosting:** Vercel (frontend), Fly.io / Railway (backend), Cloudflare R2 (assets)
+
+---
+
+## Ricochet Engine — Phaser 4 + TypeScript + Vite
+
+The game lives in `games/ricochet/`. Source layout:
+- `src/main.ts` — Phaser game config, scene registration, URL-mode boot (`?mode=edit` selects EditScene)
+- `src/game/scenes/` — `PlayScene` (runtime), `EditScene` (level editor)
+- `src/game/entities/` — `Player`, `Bullet`, `Cannon`, `Turret`, `Gear`, etc.
+- `src/game/config/feel.ts` — tunable constants (colors, speeds, gravity, etc.)
+- `src/shared/level-format/` — level JSON schema + loader, shared between play and edit
+- `public/` — static assets, default level JSON
+
+### Phaser version matters
+This project is on **Phaser 4**, not Phaser 3. Most online tutorials, Stack Overflow answers, and AI-training data describe v3. v3 and v4 share most of the public API but have breaking changes — assume things may have moved and verify before copying patterns from the web.
+
+### Phaser docs in this repo (read on demand — NOT auto-loaded)
+
+These files are **not** `@`-imported by this CLAUDE.md, to keep the per-conversation token cost low. Read them with the Read tool only when the task actually involves the relevant Phaser area.
+
+- **`PHASER_V4_NOTES.md`** — practical v3 → v4 differences and gotchas this project has hit. Check first when you suspect a v3-vs-v4 mismatch.
+- **`docs/phaser-skills/<topic>/SKILL.md`** — official-style topic guides. Topics include: `physics-arcade`, `physics-matter`, `scenes`, `cameras`, `tilemaps`, `tweens`, `input-keyboard-mouse-touch`, `sprites-and-images`, `groups-and-containers`, `text-and-bitmaptext`, `time-and-timers`, `events-system`, `data-manager`, `loading-assets`, `animations`, `audio-and-sound`, `particles`, `filters-and-postfx`, `render-textures`, `geometry-and-math`, `curves-and-paths`, `actions-and-utilities`, `game-object-components`, `graphics-and-shapes`, `scale-and-responsive`, `game-setup-and-config`, `v3-to-v4-migration`, `v4-new-features`. Read the topic that matches the area you're touching.
 
 ---
 
@@ -195,8 +166,6 @@ levels (
 2. **Do NOT add AI features for level creation.** Levels are hand-built. AI level generation is GameByTalk's territory.
 3. **Do NOT reference `Blitz Breaker` or `Mario` anywhere in code, comments, UI, asset names, or commit messages.**
 4. **Do NOT design features as if a second game is launching tomorrow.** Architecture supports multi-game; product ships with only Ricochet.
-5. **Do NOT actively develop the archived jump game.** Bug fixes acceptable if needed for archival; new features are not.
-6. **Do NOT copy asset files from `_archive_jump/` into `ricochet/`.** Style is shared, asset files are not.
 
 ### Soft guidelines
 - **Prefer boring tech.** Use stack choices with clear documentation and large communities.
@@ -252,16 +221,14 @@ When working with the founder:
 
 ## Current Status
 
-- ✅ Existing jump game has 4 levels of World 1 implemented
 - ✅ Visual style established (grayscale sci-fi robot aesthetic)
-- ✅ Some assets generated via ChatGPT for the jump game
-- 🛑 **Existing jump game to be archived** — see "Why Archive" above
-- 🚧 **Need to restructure repo into multi-game platform layout** — see `MIGRATION.md`
-- 🚧 Need to start the Ricochet game (new Godot project, fresh start, new assets in shared style)
+- ✅ Ricochet runtime + entity set built on Phaser 4 (player, walls, glass walls, spike blocks, directional spikes, conveyors, cannons, keys + key walls, gears, portals, turrets, teleports, cross-page exit)
+- 🚧 In progress: in-game level editor (`?mode=edit`) — placement / drag-place / drag-move / gear path editing
 - ⏳ Web platform (frontend + backend + database) not started yet
+- ⏳ Distribution wrappers (Tauri desktop, Capacitor mobile) not started yet
 
 ---
 
 ## When You're Unsure
 
-If a request seems to violate any of the constraints above, or if you're unsure whether something belongs in LevelCraft vs GameByTalk vs the archived jump game, **stop and ask**. The founder would rather clarify than have you build the wrong thing.
+If a request seems to violate any of the constraints above, or if you're unsure whether something belongs in LevelCraft vs GameByTalk, **stop and ask**. The founder would rather clarify than have you build the wrong thing.

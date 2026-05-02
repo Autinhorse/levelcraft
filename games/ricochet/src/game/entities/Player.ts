@@ -168,10 +168,16 @@ export class Player extends Phaser.GameObjects.Rectangle {
     if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
       this.direction = -1;
       this.riseTargetY = this.y - TILE_SIZE;
+      // Set velocity *now* (not next frame in rising) so the same-frame
+      // physics step applies pure vertical motion. Without this, any
+      // residual vx from idle's conveyor write would slant the first
+      // frame of the rise.
+      this.body.setVelocity(0, -this.flightSpeed);
       this.state = PlayerState.RISING;
     } else if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
       this.direction = 1;
       this.riseTargetY = this.y - TILE_SIZE;
+      this.body.setVelocity(0, -this.flightSpeed);
       this.state = PlayerState.RISING;
     } else if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
       // Up-launch is straight up — explicitly drop conveyor momentum.
@@ -190,10 +196,18 @@ export class Player extends Phaser.GameObjects.Rectangle {
   private rising(_dt: number): void {
     this.body.setVelocity(0, -this.flightSpeed);
     if (this.isOnCeiling()) {
-      // Ceiling clipped the rise. Start horizontal flight from current y.
+      // Ceiling clipped the rise. Start horizontal flight from current
+      // y; flip to horizontal velocity now so this frame's physics step
+      // doesn't push another tick of upward motion.
+      this.body.setVelocity(this.direction * this.flightSpeed, 0);
       this.state = PlayerState.FLYING_H;
     } else if (this.y <= this.riseTargetY) {
       this.y = this.riseTargetY;  // snap to exact tile boundary
+      // Same fix as the ceiling branch: replace the upward velocity
+      // with horizontal NOW. Without this the post-update physics step
+      // still applies vy = -flightSpeed for one frame, overshooting the
+      // 1-tile rise by ~0.5–0.67 of a tile (flightSpeed * dt at 60 fps).
+      this.body.setVelocity(this.direction * this.flightSpeed, 0);
       this.state = PlayerState.FLYING_H;
     }
   }
